@@ -444,7 +444,7 @@ export default function Home() {
 
   if (checkingCustomer) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-100 p-6">
+      <main className="flex min-h-screen items-center justify-center bg-[#111827] p-6">
         <p>読み込み中...</p>
       </main>
     );
@@ -452,13 +452,13 @@ export default function Home() {
 
   if (!customerId) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-100 p-6">
-        <div className="w-full max-w-md rounded-xl bg-white p-6 shadow">
-          <h1 className="text-2xl font-bold">
-            はるき居酒屋
+      <main className="flex min-h-screen items-center justify-center bg-[#111827] p-6">
+        <div className="w-full max-w-md rounded-2xl bg-[#fffaf0] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+          <h1 className="text-2xl font-black text-[#1f2937]">
+            ON AIR
           </h1>
 
-          <p className="mt-3 text-gray-600">
+          <p className="mt-3 text-[#6b6258]">
             ニックネームを入力してください
           </p>
 
@@ -470,13 +470,13 @@ export default function Home() {
             }
             placeholder="例：はるき"
             maxLength={20}
-            className="mt-4 w-full rounded-lg border p-3"
+            className="mt-4 w-full rounded-xl border border-[#d8cfc1] bg-white p-3 text-[#1f2937] outline-none focus:border-[#d97706] focus:ring-2 focus:ring-[#d97706]/20"
           />
 
           <button
             onClick={registerCustomer}
             disabled={loading}
-            className="mt-4 w-full rounded-lg bg-black px-4 py-3 font-bold text-white disabled:opacity-50"
+            className="mt-4 w-full rounded-xl bg-[#d97706] px-4 py-3 font-bold text-white shadow-sm disabled:opacity-50"
           >
             {loading ? "登録中..." : "入店する"}
           </button>
@@ -487,17 +487,17 @@ export default function Home() {
 
   if (ordered) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-100 p-6">
-        <div className="w-full max-w-md rounded-xl bg-white p-8 text-center shadow">
-          <h1 className="text-2xl font-bold">
+      <main className="flex min-h-screen items-center justify-center bg-[#111827] p-6">
+        <div className="w-full max-w-md rounded-2xl bg-[#fffaf0] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+          <h1 className="text-2xl font-black text-[#1f2937]">
             注文しました！
           </h1>
 
-          <p className="mt-3 text-gray-600">
+          <p className="mt-3 text-[#6b6258]">
             {nickname}さん、ご注文ありがとうございます。
           </p>
 
-          <p className="mt-2 text-gray-600">
+          <p className="mt-2 text-[#6b6258]">
             商品が届くまで少々お待ちください。
           </p>
 
@@ -506,7 +506,7 @@ export default function Home() {
               setOrdered(false);
               window.location.reload();
             }}
-            className="mt-6 w-full rounded-lg bg-black px-4 py-3 font-bold text-white"
+            className="mt-6 w-full rounded-xl bg-[#d97706] px-4 py-3 font-bold text-white shadow-sm"
           >
             メニューに戻る
           </button>
@@ -518,29 +518,29 @@ export default function Home() {
   // 会計依頼後の画面
   if (checkoutRequested) {
     return (
-      <main className="min-h-screen bg-gray-100 p-6">
+      <main className="min-h-screen bg-[#111827] p-6">
         <div className="mx-auto w-full max-w-md">
-          <div className="rounded-xl bg-white p-6 shadow">
-            <h1 className="text-2xl font-bold">
+          <div className="rounded-2xl bg-[#fffaf0] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
+            <h1 className="text-2xl font-black text-[#1f2937]">
               お会計
             </h1>
 
-            <p className="mt-2 text-gray-600">
+            <p className="mt-2 text-[#6b6258]">
               {nickname}さん
             </p>
 
-            <div className="mt-5 rounded-lg bg-orange-50 p-4 text-center">
-              <p className="font-bold text-orange-700">
+            <div className="mt-5 rounded-lg bg-[#fff4dc] p-4 text-center">
+              <p className="font-bold text-[#b45309]">
                 お会計を承りました
               </p>
 
-              <p className="mt-1 text-sm text-orange-600">
+              <p className="mt-1 text-sm text-[#d97706]">
                 スタッフがお会計の準備をしています
               </p>
             </div>
 
             <div className="mt-6">
-              <h2 className="text-lg font-bold">
+              <h2 className="text-lg font-bold text-[#1f2937]">
                 ご注文履歴
               </h2>
 
@@ -569,12 +569,12 @@ export default function Home() {
                             {orderDate.time}
                           </p>
 
-                          <p className="mt-1 text-sm text-gray-500">
+                          <p className="mt-1 text-sm text-[#81776b]">
                             注文ID：{order.id}
                           </p>
                         </div>
 
-                        <span className="text-sm font-bold text-gray-600">
+                        <span className="text-sm font-bold text-[#6b6258]">
                           ¥{currentOrderTotal}
                         </span>
                       </div>
@@ -611,7 +611,7 @@ export default function Home() {
               </div>
             </div>
 
-            <p className="mt-5 text-center text-sm text-gray-500">
+            <p className="mt-5 text-center text-sm text-[#81776b]">
               お会計が完了するまで追加注文はできません。
             </p>
           </div>
@@ -621,24 +621,24 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 p-6 pb-28">
+    <main className="min-h-screen bg-[#111827] p-6 pb-28">
       <div className="mx-auto w-full max-w-md">
-        <h1 className="text-3xl font-bold">
-          はるき居酒屋
+        <h1 className="text-3xl font-black tracking-tight text-[#fffaf0]">
+          ON AIR
         </h1>
 
-        <p className="mt-2 text-gray-600">
+        <p className="mt-2 text-[#d6cec2]">
           {nickname}さん
         </p>
 
         {/* ページ切り替え */}
-        <div className="mt-6 flex rounded-lg bg-white p-1 shadow">
+        <div className="mt-6 flex rounded-lg bg-[#fffaf0] p-1 shadow">
           <button
             onClick={() => setShowOrderHistory(false)}
             className={`flex-1 rounded-md px-4 py-2 font-bold ${
               !showOrderHistory
-                ? "bg-black text-white"
-                : "text-gray-600"
+                ? "bg-[#1f2937] text-white"
+                : "text-[#6b6258]"
             }`}
           >
             現在の注文
@@ -648,8 +648,8 @@ export default function Home() {
             onClick={() => setShowOrderHistory(true)}
             className={`flex-1 rounded-md px-4 py-2 font-bold ${
               showOrderHistory
-                ? "bg-black text-white"
-                : "text-gray-600"
+                ? "bg-[#1f2937] text-white"
+                : "text-[#6b6258]"
             }`}
           >
             注文履歴
@@ -660,13 +660,13 @@ export default function Home() {
         {!showOrderHistory && (
           <>
             <div className="mt-6">
-              <h2 className="text-xl font-bold">
+              <h2 className="text-xl font-black text-[#fffaf0]">
                 現在の注文
               </h2>
 
               {currentOrders.length === 0 ? (
-                <div className="mt-4 rounded-xl bg-white p-6 text-center shadow">
-                  <p className="text-gray-500">
+                <div className="mt-4 rounded-xl bg-[#fffaf0] p-6 text-center shadow">
+                  <p className="text-[#81776b]">
                     現在提供待ちの注文はありません。
                   </p>
                 </div>
@@ -702,7 +702,7 @@ export default function Home() {
                     return (
                       <div
                         key={order.id}
-                        className="rounded-xl bg-white p-4 shadow"
+                        className="rounded-2xl bg-[#fffaf0] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.16)]"
                       >
                         <div className="flex items-start justify-between">
                           <div>
@@ -711,7 +711,7 @@ export default function Home() {
                               {orderDate.time}
                             </p>
 
-                            <p className="mt-1 text-sm text-gray-500">
+                            <p className="mt-1 text-sm text-[#81776b]">
                               注文ID：{order.id}
                             </p>
                           </div>
@@ -719,8 +719,8 @@ export default function Home() {
                           <span
                             className={`font-bold ${
                               allItemsServed
-                                ? "text-green-600"
-                                : "text-orange-600"
+                                ? "text-[#15803d]"
+                                : "text-[#d97706]"
                             }`}
                           >
                             {allItemsServed
@@ -754,8 +754,8 @@ export default function Home() {
                                   <span
                                     className={
                                       isFullyServed
-                                        ? "text-green-700"
-                                        : "text-gray-900"
+                                        ? "text-[#166534]"
+                                        : "text-[#1f2937]"
                                     }
                                   >
                                     {isFullyServed &&
@@ -774,8 +774,8 @@ export default function Home() {
                                     <span
                                       className={`text-sm font-bold ${
                                         isFullyServed
-                                          ? "text-green-600"
-                                          : "text-orange-600"
+                                          ? "text-[#15803d]"
+                                          : "text-[#d97706]"
                                       }`}
                                     >
                                       {isFullyServed
@@ -803,7 +803,7 @@ export default function Home() {
 
             {/* 会計 */}
             {checkoutOrders.length > 0 && (
-              <div className="mt-6 rounded-xl bg-white p-4 shadow">
+              <div className="mt-6 rounded-2xl bg-[#fffaf0] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.16)]">
                 <div className="flex items-center justify-between text-xl font-bold">
                   <span>現在のお会計</span>
                   <span>¥{orderTotal}</span>
@@ -811,7 +811,7 @@ export default function Home() {
 
                 <button
                   onClick={requestCheckout}
-                  className="mt-4 w-full rounded-lg bg-orange-500 px-4 py-3 font-bold text-white"
+                  className="mt-4 w-full rounded-lg bg-[#fff4dc]0 px-4 py-3 font-bold text-white"
                 >
                   お会計
                 </button>
@@ -823,13 +823,13 @@ export default function Home() {
         {/* 注文履歴 */}
         {showOrderHistory && (
           <div className="mt-6">
-            <h2 className="text-xl font-bold">
+            <h2 className="text-xl font-black text-[#fffaf0]">
               注文履歴
             </h2>
 
             {servedOrders.length === 0 ? (
-              <div className="mt-4 rounded-xl bg-white p-6 text-center shadow">
-                <p className="text-gray-500">
+              <div className="mt-4 rounded-xl bg-[#fffaf0] p-6 text-center shadow">
+                <p className="text-[#81776b]">
                   まだ注文履歴はありません。
                 </p>
               </div>
@@ -853,7 +853,7 @@ export default function Home() {
                     return (
                       <div
                         key={order.id}
-                        className="rounded-xl bg-white p-4 shadow"
+                        className="rounded-2xl bg-[#fffaf0] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.16)]"
                       >
                         <div className="flex items-start justify-between">
                           <div>
@@ -862,12 +862,12 @@ export default function Home() {
                               {orderDate.time}
                             </p>
 
-                            <p className="mt-1 text-sm text-gray-500">
+                            <p className="mt-1 text-sm text-[#81776b]">
                               注文ID：{order.id}
                             </p>
                           </div>
 
-                          <span className="font-bold text-green-600">
+                          <span className="font-bold text-[#15803d]">
                             🟢 提供済み
                           </span>
                         </div>
@@ -907,7 +907,7 @@ export default function Home() {
 
         {/* メニュー */}
         <div className="mt-8">
-          <h2 className="text-xl font-bold">
+          <h2 className="text-xl font-black text-[#fffaf0]">
             メニュー
           </h2>
 
@@ -915,19 +915,19 @@ export default function Home() {
             {products.map((product) => (
               <div
                 key={product.id}
-                className="rounded-xl bg-white p-4 shadow"
+                className="rounded-2xl bg-[#fffaf0] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.16)]"
               >
-                <h3 className="text-lg font-bold">
+                <h3 className="text-lg font-bold text-[#1f2937]">
                   {product.name}
                 </h3>
 
-                <p className="text-gray-600">
+                <p className="text-[#6b6258]">
                   ¥{product.price}
                 </p>
 
                 <button
                   onClick={() => addToCart(product)}
-                  className="mt-3 rounded-lg bg-black px-4 py-2 text-white"
+                  className="mt-3 w-full rounded-xl bg-[#d97706] px-4 py-3 font-bold text-white shadow-sm active:scale-[0.98]"
                 >
                   カートに追加
                 </button>
@@ -940,7 +940,7 @@ export default function Home() {
       {/* カート固定ボタン */}
       <button
         onClick={() => setCartOpen(true)}
-        className="fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-md rounded-xl bg-black px-5 py-4 font-bold text-white shadow-lg"
+        className="fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-md rounded-2xl bg-[#d97706] px-5 py-4 font-bold text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)] active:scale-[0.99]"
       >
         🛒 カート
         {cartQuantity > 0 && (
@@ -955,23 +955,23 @@ export default function Home() {
 
       {/* カート */}
       {cartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40">
-          <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-md rounded-t-2xl bg-white p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-[#1f2937]/40">
+          <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-md rounded-t-2xl bg-[#fffaf0] p-5 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">
+              <h2 className="text-xl font-black text-[#1f2937]">
                 カート
               </h2>
 
               <button
                 onClick={() => setCartOpen(false)}
-                className="rounded-full bg-gray-100 px-3 py-2 text-lg"
+                className="rounded-full bg-[#f3eee5] px-3 py-2 text-lg"
               >
                 ✕
               </button>
             </div>
 
             {cart.length === 0 ? (
-              <div className="py-10 text-center text-gray-500">
+              <div className="py-10 text-center text-[#81776b]">
                 カートは空です
               </div>
             ) : (
@@ -988,7 +988,7 @@ export default function Home() {
                             {item.name}
                           </p>
 
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-[#81776b]">
                             ¥{item.price} ×{" "}
                             {item.quantity}
                           </p>
@@ -1007,7 +1007,7 @@ export default function Home() {
                               -1
                             )
                           }
-                          className="h-10 w-10 rounded-lg bg-gray-200 text-xl font-bold"
+                          className="h-10 w-10 rounded-lg bg-[#eee7da] text-xl font-bold"
                         >
                           −
                         </button>
@@ -1023,7 +1023,7 @@ export default function Home() {
                               1
                             )
                           }
-                          className="h-10 w-10 rounded-lg bg-gray-200 text-xl font-bold"
+                          className="h-10 w-10 rounded-lg bg-[#eee7da] text-xl font-bold"
                         >
                           ＋
                         </button>
@@ -1041,7 +1041,7 @@ export default function Home() {
                   <button
                     onClick={placeOrder}
                     disabled={loading}
-                    className="mt-4 w-full rounded-xl bg-green-600 px-4 py-4 font-bold text-white disabled:opacity-50"
+                    className="mt-4 w-full rounded-xl bg-[#15803d] px-4 py-4 font-bold text-white shadow-sm disabled:opacity-50"
                   >
                     {loading
                       ? "注文中..."
