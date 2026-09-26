@@ -569,29 +569,29 @@ export default function AdminPage() {
     return (
       <div
         key={order.id}
-        className="rounded-xl bg-white p-4 shadow"
+        className="rounded-xl border border-[#39423e] bg-[#242a27] p-4 shadow-lg shadow-black/20"
       >
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xl font-bold">
+            <p className="text-xl font-bold text-[#f1f3f1]">
               {order.nickname}さん
             </p>
 
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-[#aeb7b2]">
               {orderDate.date} {orderDate.time}
             </p>
           </div>
 
           <div className="text-right">
             {showHistory && (
-              <span className="text-sm font-bold text-green-600">
+              <span className="text-sm font-bold text-[#82b995]">
                 🟢 会計済み
               </span>
             )}
 
             {!showHistory &&
               order.checkout_status === "requested" && (
-                <span className="text-sm font-bold text-orange-600">
+                <span className="text-sm font-bold text-[#d7a866]">
                   🟠 お会計依頼中
                 </span>
               )}
@@ -606,30 +606,30 @@ export default function AdminPage() {
             return (
               <div
                 key={item.id}
-                className="rounded-lg border p-3"
+                className="rounded-lg border border-[#414b46] bg-[#303733] p-3"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p
                       className={`font-bold ${
                         isFullyServed
-                          ? "text-green-700"
-                          : "text-gray-900"
+                          ? "text-[#8fbd9e]"
+                          : "text-[#edf0ee]"
                       }`}
                     >
                       {isFullyServed && "🟢 "}
                       {item.name} × {item.quantity}
                     </p>
 
-                    <p className="mt-1 text-sm text-gray-500">
+                    <p className="mt-1 text-sm text-[#aeb7b2]">
                       ¥{item.price * item.quantity}
                     </p>
 
                     <p
                       className={`mt-1 text-sm font-bold ${
                         isFullyServed
-                          ? "text-green-600"
-                          : "text-orange-600"
+                          ? "text-[#82b995]"
+                          : "text-[#d7a866]"
                       }`}
                     >
                       提供済み：{item.served_quantity} /{" "}
@@ -646,14 +646,14 @@ export default function AdminPage() {
                             item.id
                           )
                         }
-                        className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white"
+                        className="shrink-0 rounded-lg bg-[#456f68] px-3 py-2 text-sm font-bold text-[#f5f7f6] transition hover:bg-[#528077]"
                       >
                         ＋ 提供
                       </button>
                     )}
 
                   {isFullyServed && (
-                    <span className="shrink-0 text-sm font-bold text-green-600">
+                    <span className="shrink-0 text-sm font-bold text-[#82b995]">
                       提供完了
                     </span>
                   )}
@@ -663,11 +663,11 @@ export default function AdminPage() {
           })}
         </div>
 
-        <div className="mt-4 border-t pt-4 text-xl font-bold">
+        <div className="mt-4 border-t border-[#414b46] pt-4 text-xl font-bold text-[#f1f3f1]">
           合計 ¥{total}
         </div>
 
-        <div className="mt-4 border-t pt-4 text-sm text-gray-600">
+        <div className="mt-4 border-t border-[#414b46] pt-4 text-sm text-[#aeb7b2]">
           <p>注文ID：{order.id}</p>
 
           {!showHistory && (
@@ -675,8 +675,8 @@ export default function AdminPage() {
               <p
                 className={`mt-1 font-bold ${
                   order.status === "served"
-                    ? "text-green-600"
-                    : "text-orange-600"
+                    ? "text-[#82b995]"
+                    : "text-[#d7a866]"
                 }`}
               >
                 状態：
@@ -690,7 +690,7 @@ export default function AdminPage() {
                   onClick={() =>
                     serveAllItems(order.id)
                   }
-                  className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-3 font-bold text-white"
+                  className="mt-4 w-full rounded-lg bg-[#456f68] px-4 py-3 font-bold text-[#f5f7f6] transition hover:bg-[#528077]"
                 >
                   この注文を全部提供済みにする
                 </button>
@@ -700,8 +700,8 @@ export default function AdminPage() {
                 className={`mt-3 font-bold ${
                   order.checkout_status ===
                   "requested"
-                    ? "text-orange-600"
-                    : "text-gray-600"
+                    ? "text-[#d7a866]"
+                    : "text-[#aeb7b2]"
                 }`}
               >
                 お会計：
@@ -720,7 +720,7 @@ export default function AdminPage() {
                   onClick={() =>
                     completeCheckout(order)
                   }
-                  className="mt-4 w-full rounded-lg bg-green-600 px-4 py-3 font-bold text-white"
+                  className="mt-4 w-full rounded-lg bg-[#527d65] px-4 py-3 font-bold text-[#f5f7f6] transition hover:bg-[#629477]"
                 >
                   会計済みにする
                 </button>
@@ -736,7 +736,7 @@ export default function AdminPage() {
                   order.nickname
                 )
               }
-              className="mt-4 w-full rounded-lg bg-gray-700 px-4 py-3 font-bold text-white"
+              className="mt-4 w-full rounded-lg bg-[#3f4844] px-4 py-3 font-bold text-[#e8ecea] transition hover:bg-[#4b5651]"
             >
               追加注文を受け付ける
             </button>
@@ -747,18 +747,18 @@ export default function AdminPage() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-100 p-6">
-      <h1 className="text-3xl font-bold">
+    <main className="min-h-screen bg-[#171c1a] p-6 text-[#edf0ee]">
+      <h1 className="text-3xl font-bold text-[#f1f3f1]">
         スタッフ画面
       </h1>
 
       <div className="mt-6 flex gap-2">
         <button
           onClick={() => setShowHistory(false)}
-          className={`rounded-lg px-4 py-2 font-bold ${
+          className={`rounded-lg px-4 py-2 font-bold transition ${
             !showHistory
-              ? "bg-black text-white"
-              : "bg-white text-gray-700"
+              ? "bg-[#456f68] text-[#f5f7f6]"
+              : "bg-[#292f2c] text-[#aeb7b2] hover:bg-[#343c38]"
           }`}
         >
           現在の注文
@@ -766,10 +766,10 @@ export default function AdminPage() {
 
         <button
           onClick={() => setShowHistory(true)}
-          className={`rounded-lg px-4 py-2 font-bold ${
+          className={`rounded-lg px-4 py-2 font-bold transition ${
             showHistory
-              ? "bg-black text-white"
-              : "bg-white text-gray-700"
+              ? "bg-[#456f68] text-[#f5f7f6]"
+              : "bg-[#292f2c] text-[#aeb7b2] hover:bg-[#343c38]"
           }`}
         >
           会計履歴
@@ -779,9 +779,9 @@ export default function AdminPage() {
       {!showHistory ? (
         <>
           <div className="mt-6">
-            <h2 className="text-2xl font-bold">
+            <h2 className="text-2xl font-bold text-[#d7a866]">
               🟠 未提供
-              <span className="ml-2 text-base text-gray-500">
+              <span className="ml-2 text-base font-normal text-[#89938e]">
                 {unservedOrders.length}件
               </span>
             </h2>
@@ -790,7 +790,7 @@ export default function AdminPage() {
               {unservedOrders.map(renderOrder)}
 
               {unservedOrders.length === 0 && (
-                <p className="text-gray-600">
+                <p className="text-[#89938e]">
                   未提供の注文はありません。
                 </p>
               )}
@@ -798,9 +798,9 @@ export default function AdminPage() {
           </div>
 
           <div className="mt-10">
-            <h2 className="text-2xl font-bold">
+            <h2 className="text-2xl font-bold text-[#82b995]">
               🟢 提供済み
-              <span className="ml-2 text-base text-gray-500">
+              <span className="ml-2 text-base font-normal text-[#89938e]">
                 {servedOrders.length}件
               </span>
             </h2>
@@ -809,7 +809,7 @@ export default function AdminPage() {
               {servedOrders.map(renderOrder)}
 
               {servedOrders.length === 0 && (
-                <p className="text-gray-600">
+                <p className="text-[#89938e]">
                   提供済みの注文はありません。
                 </p>
               )}
@@ -821,7 +821,7 @@ export default function AdminPage() {
           {displayOrders.map(renderOrder)}
 
           {displayOrders.length === 0 && (
-            <p className="text-gray-600">
+            <p className="text-[#89938e]">
               会計履歴はありません。
             </p>
           )}
