@@ -343,6 +343,25 @@ export default function Home() {
     0
   );
 
+  // 会計依頼後の注文
+  const requestedCheckoutOrders = orderHistory.filter(
+    (order) =>
+      order.checkout_status === "requested"
+  );
+
+  // 会計依頼後の合計
+  const requestedCheckoutTotal =
+    requestedCheckoutOrders.reduce(
+      (sum, order) =>
+        sum +
+        (order.items ?? []).reduce(
+          (orderSum, item) =>
+            orderSum + item.price * item.quantity,
+          0
+        ),
+      0
+    );
+
   // お会計依頼
   const requestCheckout = async () => {
     if (!customerId) return;
@@ -546,7 +565,7 @@ export default function Home() {
               </h2>
 
               <div className="mt-4 space-y-4">
-                {checkoutOrders.map((order) => {
+                {requestedCheckoutOrders.map((order) => {
                   const orderDate = formatOrderDate(
                     order.created_at
                   );
@@ -608,7 +627,7 @@ export default function Home() {
             <div className="mt-6 border-t border-[#414B46] pt-5">
               <div className="flex items-center justify-between text-2xl font-bold text-[#E8ECE9]">
                 <span>お会計合計</span>
-                <span>¥{orderTotal}</span>
+                <span>¥{requestedCheckoutTotal}</span>
               </div>
             </div>
 
