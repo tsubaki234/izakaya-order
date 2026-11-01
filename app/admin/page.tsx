@@ -32,6 +32,7 @@ export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   // 商品管理用
   const [products, setProducts] = useState<Product[]>([]);
@@ -624,11 +625,46 @@ export default function AdminPage() {
     ? historyOrders
     : orders;
 
-  const unservedOrders = orders.filter(
+  const activeCustomers = Array.from(
+    orders.reduce((customerMap, order) => {
+      const existing = customerMap.get(order.customer_id);
+
+      if (existing) {
+        existing.orderCount += 1;
+        existing.itemCount += order.items.reduce(
+          (sum, item) => sum + item.quantity,
+          0
+        );
+      } else {
+        customerMap.set(order.customer_id, {
+          customer_id: order.customer_id,
+          nickname: order.nickname,
+          orderCount: 1,
+          itemCount: order.items.reduce(
+            (sum, item) => sum + item.quantity,
+            0
+          ),
+        });
+      }
+
+      return customerMap;
+    }, new Map<string, {
+      customer_id: string;
+      nickname: string;
+      orderCount: number;
+      itemCount: number;
+    }>())
+  ).map(([, customer]) => customer);
+
+  const visibleOrders = selectedCustomerId
+    ? orders.filter((order) => order.customer_id === selectedCustomerId)
+    : orders;
+
+  const unservedOrders = visibleOrders.filter(
     (order) => order.status !== "served"
   );
 
-  const servedOrders = orders.filter(
+  const servedOrders = visibleOrders.filter(
     (order) => order.status === "served"
   );
 
@@ -938,6 +974,74 @@ export default function AdminPage() {
 
       {!showHistory ? (
         <>
+          <section className="mt-6 rounded-xl border border-[#39423e] bg-[#242a27] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-xl font-bold text-[#f1f3f1]">
+                お客さん一覧
+              </h2>
+              <span className="text-sm text-[#aeb7b2]">
+                {activeCustomers.length}名
+              </span>
+            </div>
+
+            <p className="mt-2 text-sm text-[#89938e]">
+              お客さんを選択すると、その人の注文だけを表示します。
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {activeCustomers.map((customer) => {
+                const isSelected =
+                  selectedCustomerId === customer.customer_id;
+
+                return (
+                  <button
+                    key={customer.customer_id}
+                    onClick={() =>
+                      setSelectedCustomerId(
+                        isSelected ? null : customer.customer_id
+                      )
+                    }
+                    className={`rounded-lg border p-3 text-left transition ${
+                      isSelected
+                        ? "border-[#82b995] bg-[#303d35]"
+                        : "border-[#414b46] bg-[#303733] hover:bg-[#39423e]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-[#f1f3f1]">
+                        {customer.nickname}さん
+                      </span>
+                      {isSelected && (
+                        <span className="text-xs font-bold text-[#82b995]">
+                          表示中
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-sm text-[#aeb7b2]">
+                      {customer.orderCount}件の注文 / 商品合計{" "}
+                      {customer.itemCount}個
+                    </p>
+                  </button>
+                );
+              })}
+
+              {activeCustomers.length === 0 && (
+                <p className="py-3 text-sm text-[#89938e]">
+                  現在注文中のお客さんはいません。
+                </p>
+              )}
+            </div>
+
+            {selectedCustomerId && (
+              <button
+                onClick={() => setSelectedCustomerId(null)}
+                className="mt-3 rounded-lg bg-[#3f4844] px-4 py-2 text-sm font-bold text-[#e8ecea] transition hover:bg-[#4b5651]"
+              >
+                全員の注文を表示
+              </button>
+            )}
+          </section>
+
           <div className="mt-6">
             <h2 className="text-2xl font-bold text-[#d7a866]">
               🟠 未提供
