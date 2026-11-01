@@ -21,6 +21,14 @@ type Order = {
   }[];
 };
 
+type StaffCall = {
+  id: number;
+  customer_id: string;
+  nickname: string;
+  status: string;
+  created_at: string;
+};
+
 type Product = {
   id: number;
   name: string;
@@ -34,12 +42,29 @@ export default function AdminPage() {
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [staffCalls, setStaffCalls] = useState<StaffCall[]>([]);
+  const [updatingCallIds, setUpdatingCallIds] = useState<number[]>([]);
 
   // 商品管理用
   const [products, setProducts] = useState<Product[]>([]);
   const [updatingProductIds, setUpdatingProductIds] = useState<number[]>([]);
 
   useEffect(() => {
+    const loadStaffCalls = async () => {
+      const { data, error } = await supabase
+        .from("staff_calls")
+        .select("id, customer_id, nickname, status, created_at")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        console.error("スタッフ呼び出し取得エラー:", error);
+        return;
+      }
+
+      setStaffCalls(data || []);
+    };
+
     const loadOrders = async () => {
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
@@ -279,6 +304,7 @@ export default function AdminPage() {
     loadOrders();
     loadHistory();
     loadProducts();
+    loadStaffCalls();
 
     const channel = supabase
       .channel("admin-orders")
@@ -329,6 +355,17 @@ export default function AdminPage() {
           loadProducts();
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "staff_calls",
+        },
+        () => {
+          loadStaffCalls();
+        }
+      )
       .subscribe((status, err) => {
         console.log("Realtime status:", status, err);
       });
@@ -337,6 +374,31 @@ export default function AdminPage() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // スタッフ呼び出しを対応済みにする
+  const completeStaffCall = async (call: StaffCall) => {
+    if (updatingCallIds.includes(call.id)) return;
+
+    setUpdatingCallIds((current) => [...current, call.id]);
+
+    const { error } = await supabase
+      .from("staff_calls")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", call.id)
+      .eq("status", "pending");
+
+    if (error) {
+      console.error("呼び出し対応完了エラー:", error);
+      alert("呼び出しを対応済みにできませんでした");
+    } else {
+      setStaffCalls((current) => current.filter((item) => item.id !== call.id));
+    }
+
+    setUpdatingCallIds((current) => current.filter((id) => id !== call.id));
+  };
 
   // 商品の販売状態を切り替える
   const toggleProductAvailability = async (product: Product) => {
@@ -970,6 +1032,52 @@ export default function AdminPage() {
       <h1 className="text-3xl font-bold text-[#f1f3f1]">
         スタッフ画面
       </h1>
+
+      {/* スタッフ呼び出し */}
+      <section className="mt-6 rounded-xl border border-[#9b7448] bg-[#30291f] p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-[#f1f3f1]">
+            🔔 スタッフ呼び出し
+          </h2>
+          <span className="rounded-full bg-[#6a4c2d] px-3 py-1 text-sm font-bold text-[#f4d7ad]">
+            {staffCalls.length}件
+          </span>
+        </div>
+
+        {staffCalls.length === 0 ? (
+          <p className="mt-3 text-sm text-[#aeb7b2]">
+            呼び出しはありません。
+          </p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {staffCalls.map((call) => (
+              <div
+                key={call.id}
+                className="rounded-lg border border-[#6a5438] bg-[#3a3024] p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-bold text-[#f1f3f1]">
+                      {call.nickname}さん
+                    </p>
+                    <p className="mt-1 text-sm text-[#d7a866]">
+                      {new Date(call.created_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} 呼び出し
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold text-[#f4d7ad]">未対応</span>
+                </div>
+                <button
+                  onClick={() => completeStaffCall(call)}
+                  disabled={updatingCallIds.includes(call.id)}
+                  className="mt-3 w-full rounded-lg bg-[#456f68] px-4 py-3 font-bold text-[#f5f7f6] transition hover:bg-[#528077] disabled:opacity-50"
+                >
+                  {updatingCallIds.includes(call.id) ? "更新中..." : "対応済みにする"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* 商品管理 */}
       <section className="mt-6 rounded-xl border border-[#39423e] bg-[#242a27] p-4">

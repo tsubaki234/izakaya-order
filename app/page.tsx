@@ -45,6 +45,8 @@ export default function Home() {
   const [orderHistory, setOrderHistory] = useState<CustomerOrder[]>([]);
   const [checkoutRequested, setCheckoutRequested] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [staffCallPending, setStaffCallPending] = useState(false);
+  const [callingStaff, setCallingStaff] = useState(false);
   const [showOrderHistory, setShowOrderHistory] = useState(false);
   const [checkoutDisplayOrders, setCheckoutDisplayOrders] = useState<
     CustomerOrder[]
@@ -205,6 +207,76 @@ export default function Home() {
       supabase.removeChannel(channel);
     };
   }, [customerId]);
+
+  // スタッフ呼び出し状態を読み込み、スタッフ側の対応完了を監視
+  useEffect(() => {
+    if (!customerId) return;
+
+    const loadPendingCall = async () => {
+      const { data, error } = await supabase
+        .from("staff_calls")
+        .select("id")
+        .eq("customer_id", customerId)
+        .eq("status", "pending")
+        .limit(1);
+
+      if (error) {
+        console.error("呼び出し状態取得エラー:", error);
+        return;
+      }
+
+      setStaffCallPending((data || []).length > 0);
+    };
+
+    loadPendingCall();
+
+    const channel = supabase
+      .channel(`customer-staff-calls-${customerId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "staff_calls",
+          filter: `customer_id=eq.${customerId}`,
+        },
+        (payload) => {
+          const call = payload.new as { status?: string };
+          if (call.status === "completed") {
+            setStaffCallPending(false);
+          } else if (call.status === "pending") {
+            setStaffCallPending(true);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [customerId]);
+
+  // スタッフを呼び出す
+  const callStaff = async () => {
+    if (!customerId || callingStaff || staffCallPending) return;
+
+    setCallingStaff(true);
+
+    const { error } = await supabase.from("staff_calls").insert({
+      customer_id: customerId,
+      nickname,
+    });
+
+    if (error) {
+      console.error("スタッフ呼び出しエラー:", error);
+      alert("スタッフの呼び出しに失敗しました。通信状況を確認して、もう一度お試しください。");
+      setCallingStaff(false);
+      return;
+    }
+
+    setStaffCallPending(true);
+    setCallingStaff(false);
+  };
 
   // スタッフからの端末リセットを監視
   useEffect(() => {
@@ -782,6 +854,27 @@ export default function Home() {
         <p className="mt-2 text-[#B0BAB4]">
           {nickname}さん
         </p>
+
+        <button
+          onClick={callStaff}
+          disabled={callingStaff || staffCallPending}
+          className={`mt-4 w-full rounded-xl px-4 py-3 font-bold transition ${
+            staffCallPending
+              ? "bg-[#3f4844] text-[#b0bab4]"
+              : "bg-[#456f68] text-[#F5F7F6] hover:bg-[#528077]"
+          } disabled:cursor-not-allowed disabled:opacity-80`}
+        >
+          {callingStaff
+            ? "呼び出し中..."
+            : staffCallPending
+              ? "🔔 スタッフを呼び出しています"
+              : "🔔 スタッフを呼ぶ"}
+        </button>
+        {staffCallPending && (
+          <p className="mt-2 text-center text-xs text-[#89958E]">
+            スタッフが対応を完了すると、もう一度呼び出せます。
+          </p>
+        )}
 
         {/* ページ切り替え */}
         <div className="mt-6 flex rounded-lg bg-[#1B211E] p-1 shadow">
