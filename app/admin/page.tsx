@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Order = {
@@ -67,10 +67,51 @@ export default function AdminPage() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [staffCalls, setStaffCalls] = useState<StaffCall[]>([]);
   const [updatingCallIds, setUpdatingCallIds] = useState<number[]>([]);
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const notificationSoundEnabledRef = useRef(false);
 
   // 商品管理用
   const [products, setProducts] = useState<Product[]>([]);
   const [updatingProductIds, setUpdatingProductIds] = useState<number[]>([]);
+
+  const toggleNotificationSound = async () => {
+    const nextEnabled = !notificationSoundEnabled;
+    if (nextEnabled) {
+      try {
+        const context = audioContextRef.current ?? new window.AudioContext();
+        audioContextRef.current = context;
+        await context.resume();
+      } catch (error) {
+        console.error("通知音を有効にできませんでした:", error);
+        alert("このブラウザでは通知音を有効にできませんでした。ブラウザの設定を確認してください。");
+        return;
+      }
+    }
+    notificationSoundEnabledRef.current = nextEnabled;
+    setNotificationSoundEnabled(nextEnabled);
+  };
+
+  const playOrderNotification = () => {
+    if (!notificationSoundEnabledRef.current) return;
+    const context = audioContextRef.current;
+    if (!context || context.state !== "running") return;
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const start = context.currentTime;
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(659.25, start);
+    oscillator.frequency.setValueAtTime(783.99, start + 0.18);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.035, start + 0.035);
+    gain.gain.setValueAtTime(0.035, start + 0.18);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.48);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + 0.5);
+  };
 
   useEffect(() => {
     const loadStaffCalls = async () => {
@@ -92,8 +133,7 @@ export default function AdminPage() {
       const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select("*")
-        .neq("checkout_status", "paid")
-        .neq("checkout_status", "cancelled")
+        .or("checkout_status.is.null,checkout_status.not.in.(paid,cancelled)")
         .order("created_at", { ascending: true });
 
       if (ordersError) {
@@ -341,6 +381,7 @@ export default function AdminPage() {
           table: "orders",
         },
         () => {
+          playOrderNotification();
           loadOrders();
           loadHistory();
         }
@@ -360,7 +401,31 @@ export default function AdminPage() {
       .on(
         "postgres_changes",
         {
+          event: "INSERT",
+          schema: "public",
+          table: "order_items",
+        },
+        () => {
+          loadOrders();
+          loadHistory();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
           event: "UPDATE",
+          schema: "public",
+          table: "order_items",
+        },
+        () => {
+          loadOrders();
+          loadHistory();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
           schema: "public",
           table: "order_items",
         },
@@ -395,7 +460,16 @@ export default function AdminPage() {
         console.log("Realtime status:", status, err);
       });
 
+    // Realtimeが一時的に切断された場合に備え、20秒ごとに同期する
+    const refreshInterval = window.setInterval(() => {
+      loadOrders();
+      loadHistory();
+      loadProducts();
+      loadStaffCalls();
+    }, 20000);
+
     return () => {
+      window.clearInterval(refreshInterval);
       supabase.removeChannel(channel);
     };
   }, []);
@@ -766,6 +840,7 @@ export default function AdminPage() {
       date: date.toLocaleDateString("ja-JP", {
         month: "numeric",
         day: "numeric",
+        weekday: "short",
       }),
       time: date.toLocaleTimeString("ja-JP", {
         hour: "2-digit",
@@ -773,10 +848,6 @@ export default function AdminPage() {
       }),
     };
   };
-
-  const displayOrders = showHistory
-    ? historyOrders
-    : orders;
 
   const activeCustomers = Array.from(
     orders.reduce((customerMap, order) => {
@@ -813,12 +884,24 @@ export default function AdminPage() {
     ? orders.filter((order) => order.customer_id === selectedCustomerId)
     : orders;
 
+  const groupOrdersByCustomer = (source: Order[]) => {
+    const grouped = new Map<string, { customer_id: string; nickname: string; orders: Order[] }>();
+    source.forEach((order) => {
+      const existing = grouped.get(order.customer_id);
+      if (existing) existing.orders.push(order);
+      else grouped.set(order.customer_id, { customer_id: order.customer_id, nickname: order.nickname, orders: [order] });
+    });
+    return Array.from(grouped.values()).map((group) => ({
+      ...group,
+      orders: [...group.orders].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+    }));
+  };
+
+  const visibleCustomerGroups = groupOrdersByCustomer(visibleOrders);
+  const historyCustomerGroups = groupOrdersByCustomer(historyOrders);
+
   const unservedOrders = visibleOrders.filter(
     (order) => order.status !== "served"
-  );
-
-  const servedOrders = visibleOrders.filter(
-    (order) => order.status === "served"
   );
 
   const renderOrder = (order: Order) => {
@@ -835,15 +918,10 @@ export default function AdminPage() {
         key={order.id}
         className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-lg shadow-black/20"
       >
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xl font-bold text-[#F3EDEB]">
-              {order.nickname}様
-            </p>
-
-            <p className="mt-1 text-sm text-[#C5B7BA]">
-              {orderDate.date} {orderDate.time}
-            </p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[#C5B7BA]">
+            <span className="rounded-sm bg-[#261D23] px-2.5 py-1.5">{orderDate.date}</span>
+            <span className="rounded-sm bg-[#261D23] px-2.5 py-1.5">{orderDate.time}</span>
           </div>
 
           <div className="text-right">
@@ -882,8 +960,13 @@ export default function AdminPage() {
                       }`}
                     >
                       {isFullyServed && "🟢 "}
-                      {getMenuPresentation(item.name)?.english ?? item.name}{item.option ? ` · ${item.option}` : ""} × {item.quantity}
+                      {getMenuPresentation(item.name)?.english ?? item.name} × {item.quantity}
                     </p>
+                    {item.option && (
+                      <span className="mt-1 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2.5 py-1 text-xs font-bold tracking-wide text-[#F3D9AE]">
+                        {item.option.toUpperCase()}
+                      </span>
+                    )}
 
                     <p className="mt-1 text-sm text-[#C5B7BA]">
                       ¥{(item.price * item.quantity).toLocaleString("en-US")}
@@ -940,13 +1023,13 @@ export default function AdminPage() {
                 className={`mt-1 font-bold ${
                   order.status === "served"
                     ? "text-[#D8B58A]"
-                    : "text-[#D7B77C]"
+                    : "text-[#E0525B]"
                 }`}
               >
                 状態：
                 {order.status === "served"
-                  ? "🟢 提供済み"
-                  : "🟠 未提供"}
+                  ? "● 提供済み"
+                  : "● 未提供"}
               </p>
 
               {order.status !== "served" && (
@@ -1064,7 +1147,7 @@ export default function AdminPage() {
   ];
 
   return (
-    <main style={{ fontFamily: 'Georgia, "Times New Roman", "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif' }} className="min-h-screen bg-[#100D10] px-3 py-5 text-[#F3EDEB] sm:px-6 sm:py-7">
+    <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#100D10] px-3 py-5 text-[#F3EDEB] sm:px-6 sm:py-7">
       <div className="mx-auto max-w-5xl">
         <header className="mb-6 flex items-end justify-between gap-3 border-b border-[#49323F] pb-5">
           <div>
@@ -1072,7 +1155,14 @@ export default function AdminPage() {
             <h1 className="mt-1 text-3xl font-semibold tracking-[0.22em] text-[#F3EDEB]">myonga</h1>
             <p className="mt-1 text-xs tracking-wide text-[#A18F96]">STAFF CONSOLE</p>
           </div>
-          <span className="rounded-full border border-[#49323F] bg-[#1B151A] px-3 py-1.5 text-xs text-[#C5B7BA]">管理画面</span>
+          <button
+            type="button"
+            onClick={toggleNotificationSound}
+            aria-pressed={notificationSoundEnabled}
+            className={`rounded-md border px-3 py-2 text-xs font-semibold transition ${notificationSoundEnabled ? "border-[#A9785D] bg-[#382832] text-[#F3D9AE]" : "border-[#49323F] bg-[#1B151A] text-[#C5B7BA]"}`}
+          >
+            通知音 {notificationSoundEnabled ? "ON" : "OFF"}
+          </button>
         </header>
 
         <nav className="sticky top-0 z-30 -mx-3 mb-6 grid grid-cols-5 gap-1 border-y border-[#49323F] bg-[#100D10]/95 px-2 py-2 backdrop-blur sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-[#1B151A] sm:p-2">
@@ -1115,19 +1205,26 @@ export default function AdminPage() {
                 <button onClick={() => setSelectedCustomerId(null)} className="text-sm font-semibold text-[#F3EDEB] underline underline-offset-4">解除</button>
               </div>
             )}
-            <div className="mb-7">
-              <h3 className="mb-3 text-sm font-semibold tracking-wide text-[#D7B77C]">未提供</h3>
-              <div className="space-y-3">
-                {unservedOrders.map(renderOrder)}
-                {unservedOrders.length === 0 && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">未提供の注文はありません。</p>}
-              </div>
-            </div>
-            <div>
-              <h3 className="mb-3 text-sm font-semibold tracking-wide text-[#C5B7BA]">提供済み</h3>
-              <div className="space-y-3">
-                {servedOrders.map(renderOrder)}
-                {servedOrders.length === 0 && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">提供済みの注文はありません。</p>}
-              </div>
+            <div className="space-y-4">
+              {visibleCustomerGroups.map((group) => {
+                const groupUnserved = group.orders.filter((order) => order.status !== "served").length;
+                const groupItemCount = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+                return (
+                  <section key={group.customer_id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                      <div>
+                        <h3 className="text-base font-semibold text-[#F3EDEB]">{group.nickname} 様</h3>
+                        <p className="mt-0.5 text-xs text-[#A18F96]">{group.orders.length}件の注文 ・ 商品 {groupItemCount}点</p>
+                      </div>
+                      {groupUnserved > 0 && <span className="shrink-0 text-xs font-semibold text-[#E0525B]">● 未提供 {groupUnserved}件</span>}
+                    </div>
+                    <div className="space-y-3">
+                      {group.orders.map(renderOrder)}
+                    </div>
+                  </section>
+                );
+              })}
+              {visibleCustomerGroups.length === 0 && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">現在、注文はありません。</p>}
             </div>
           </section>
         )}
@@ -1200,8 +1297,8 @@ export default function AdminPage() {
                 return (
                   <article key={product.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#49323F] bg-[#1B151A] p-4">
                     <div className="min-w-0">
-                      <p className={`font-serif text-base ${product.is_available ? "text-[#F3EDEB]" : "text-[#A18F96]"}`}>{getMenuPresentation(product.name)?.english ?? product.name}</p>
-                      <p className="mt-0.5 text-[10px] tracking-wide text-[#A18F96]">{getMenuPresentation(product.name)?.reading ?? ""}</p>
+                      <p className={`font-sans text-base ${product.is_available ? "text-[#F3EDEB]" : "text-[#A18F96]"}`}>{getMenuPresentation(product.name)?.english ?? product.name}</p>
+                      <p className="mt-0.5 text-xs tracking-wide text-[#A18F96]">{getMenuPresentation(product.name)?.reading ?? ""}</p>
                       <p className="mt-1 text-sm text-[#C5B7BA]">{getMenuPresentation(product.name)?.category ?? product.category ?? "Uncategorized"} / ¥{product.price.toLocaleString("en-US")}</p>
                       <p className={`mt-1 text-xs font-semibold ${product.is_available ? "text-[#D7B77C]" : "text-[#F08A91]"}`}>{product.is_available ? "販売中" : "売り切れ"}</p>
                     </div>
@@ -1220,9 +1317,14 @@ export default function AdminPage() {
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">PAYMENT HISTORY</p>
               <h2 className="mt-1 text-2xl font-semibold">会計履歴</h2>
             </div>
-            <div className="space-y-3">
-              {displayOrders.map(renderOrder)}
-              {displayOrders.length === 0 && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">会計履歴はありません。</p>}
+            <div className="space-y-4">
+              {historyCustomerGroups.map((group) => (
+                <section key={group.customer_id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-3">
+                  <h3 className="mb-2 px-1 text-base font-semibold text-[#F3EDEB]">{group.nickname} 様</h3>
+                  <div className="space-y-3">{group.orders.map(renderOrder)}</div>
+                </section>
+              ))}
+              {historyCustomerGroups.length === 0 && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">会計履歴はありません。</p>}
             </div>
           </section>
         )}

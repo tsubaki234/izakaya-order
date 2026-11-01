@@ -63,6 +63,7 @@ export default function Home() {
   const [cartOpen, setCartOpen] = useState(false);
   const [optionProduct, setOptionProduct] = useState<Product | null>(null);
   const [ordered, setOrdered] = useState(false);
+  const [lastPlacedItems, setLastPlacedItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [nickname, setNickname] = useState("");
@@ -138,7 +139,18 @@ export default function Home() {
       }
 
       if (!items || items.length === 0) {
-        setOrderHistory([]);
+        const emptyItemHistory = orders.map((order) => ({
+          id: order.id,
+          status: "pending",
+          checkout_status: order.checkout_status,
+          payment_method: order.payment_method,
+          created_at: order.created_at,
+          items: [],
+        }));
+        setOrderHistory(emptyItemHistory);
+        if (hasCheckoutRequest) {
+          setCheckoutDisplayOrders(emptyItemHistory.filter((order) => order.checkout_status === "requested"));
+        }
         return;
       }
 
@@ -486,10 +498,15 @@ export default function Home() {
     0
   );
 
+  const categoryItemCount = products.filter((product) => {
+    const presentation = getMenuPresentation(product.name);
+    return Boolean(presentation) && (selectedCategory === "All" || presentation?.category === selectedCategory);
+  }).length;
+
   // 現在注文中の注文だけ
   const currentOrders = orderHistory.filter(
     (order) =>
-      order.checkout_status === "none" &&
+      (order.checkout_status === "none" || order.checkout_status === null) &&
       order.items.some(
         (item) => item.served_quantity < item.quantity
       )
@@ -505,8 +522,7 @@ export default function Home() {
 
   // 会計対象の注文
   const checkoutOrders = orderHistory.filter(
-    (order) =>
-      order.checkout_status === "none"
+    (order) => order.checkout_status === "none" || order.checkout_status === null
   );
 
   // 会計対象の合計
@@ -564,7 +580,7 @@ export default function Home() {
         payment_method: paymentMethod,
       })
       .eq("customer_id", customerId)
-      .eq("checkout_status", "none");
+      .or("checkout_status.eq.none,checkout_status.is.null");
 
     if (error) {
       console.error(error);
@@ -674,11 +690,14 @@ export default function Home() {
       return;
     }
 
+    setLastPlacedItems([...cart]);
     setCart([]);
     setCartOpen(false);
     setOrdered(true);
     setLoading(false);
   };
+
+  const lastPlacedTotal = lastPlacedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   const formatOrderDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -687,6 +706,7 @@ export default function Home() {
       date: date.toLocaleDateString("ja-JP", {
         month: "numeric",
         day: "numeric",
+        weekday: "short",
       }),
       time: date.toLocaleTimeString("ja-JP", {
         hour: "2-digit",
@@ -705,7 +725,7 @@ export default function Home() {
 
   if (!customerId) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
+      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
         <div className="w-full max-w-md rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
           <h1 className="text-2xl font-black text-[#F3EDEB]">
             myonga
@@ -740,28 +760,41 @@ export default function Home() {
 
   if (ordered) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
+      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
         <div className="w-full max-w-md rounded-md bg-[#1B151A] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
-          <h1 className="text-2xl font-black text-[#F3EDEB]">
-            注文しました！
+          <h1 className="text-2xl font-semibold text-[#F3EDEB]">
+            ご注文を受け付けました
           </h1>
 
           <p className="mt-3 text-[#C5B7BA]">
             {nickname}様、ご注文ありがとうございます。
           </p>
 
-          <p className="mt-2 text-[#C5B7BA]">
+          <div className="mt-5 rounded-md border border-[#49323F] bg-[#261D23] p-4 text-left">
+            <p className="mb-3 text-sm font-semibold text-[#D7B77C]">注文内容</p>
+            <div className="space-y-2">
+              {lastPlacedItems.map((item) => (
+                <div key={`${item.id}-${item.option ?? "default"}`} className="flex items-start justify-between gap-3 text-sm">
+                  <span className="text-[#F3EDEB]">{getMenuPresentation(item.name)?.english ?? item.name}{item.option ? ` · ${item.option}` : ""} × {item.quantity}</span>
+                  <span className="shrink-0 text-[#C5B7BA]">¥{(item.price * item.quantity).toLocaleString("ja-JP")}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 border-t border-[#49323F] pt-3 text-right font-semibold text-[#F3EDEB]">合計 ¥{lastPlacedTotal.toLocaleString("ja-JP")}</div>
+          </div>
+
+          <p className="mt-4 text-sm text-[#C5B7BA]">
             商品が届くまで少々お待ちください。
           </p>
 
           <button
             onClick={() => {
               setOrdered(false);
-              window.location.reload();
+              setCustomerTab("orders");
             }}
-            className="mt-6 w-full rounded-md bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F]"
+            className="mt-6 w-full rounded-md bg-[#71364F] px-4 py-3 font-semibold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F]"
           >
-            メニューに戻る
+            注文状況を見る
           </button>
         </div>
       </main>
@@ -771,7 +804,7 @@ export default function Home() {
   // 会計依頼後の画面
   if (checkoutRequested) {
     return (
-      <main style={{ fontFamily: 'Georgia, "Times New Roman", "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif' }} className="min-h-screen bg-[#100D10] p-6">
+      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#100D10] p-6">
         <div className="mx-auto w-full max-w-md">
           <div className="rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
             <h1 className="text-2xl font-black text-[#F3EDEB]">
@@ -828,10 +861,10 @@ export default function Home() {
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="font-bold text-[#F3EDEB]">
-                            {orderDate.date}{" "}
-                            {orderDate.time}
-                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="rounded-sm bg-[#1B151A] px-2.5 py-1 text-sm text-[#F3EDEB]">{orderDate.date}</span>
+                            <span className="rounded-sm bg-[#1B151A] px-2.5 py-1 text-sm text-[#F3EDEB]">{orderDate.time}</span>
+                          </div>
 
                           <p className="mt-1 text-sm text-[#C5B7BA]">
                             注文ID：{order.id}
@@ -850,7 +883,7 @@ export default function Home() {
                             className="flex items-center justify-between text-[#F3EDEB]"
                           >
                             <span>
-                              {item.productName} ×{" "}
+                              {getMenuPresentation(item.productName)?.english ?? item.productName}{item.option ? ` · ${item.option.toUpperCase()}` : ""} ×{" "}
                               {item.quantity}
                             </span>
 
@@ -883,7 +916,7 @@ export default function Home() {
   }
 
   return (
-    <main style={{ fontFamily: 'Georgia, "Times New Roman", "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif' }} className="min-h-screen bg-[#100D10] p-6 pb-28">
+    <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#100D10] p-6 pb-28">
       <div className="mx-auto w-full max-w-md">
         <h1 className="text-3xl font-semibold tracking-[0.22em] text-[#F3EDEB]">
           myonga
@@ -943,10 +976,9 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4 flex items-end justify-between">
               <div>
-                <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">MENU</p>
-                <h2 className="mt-1 font-serif text-2xl font-semibold tracking-wide text-[#F3EDEB]">Menu</h2>
+                <h2 className="font-sans text-2xl font-semibold tracking-wide text-[#F3EDEB]">Menu</h2>
               </div>
-              <span className="text-xs text-[#A18F96]">{products.filter((product) => Boolean(getMenuPresentation(product.name))).length} items</span>
+              <span className="text-xs text-[#A18F96]">{categoryItemCount} items</span>
             </div>
 
             {(() => {
@@ -979,22 +1011,22 @@ export default function Home() {
                       return (
                         <section key={category} className="space-y-3">
                           <div className="flex items-baseline justify-between border-b border-[#49323F] pb-3 pt-2">
-                            <span className="font-serif text-lg tracking-wide text-[#F3EDEB]">{category}</span>
+                            <span className="font-sans text-lg font-medium tracking-normal text-[#F3EDEB]">{category}</span>
                             <span className="text-sm tracking-wide text-[#D7B77C]">¥{CATEGORY_PRICES[category].toLocaleString("en-US")}</span>
                           </div>
                           {categoryProducts.map((product) => {
                             const presentation = getMenuPresentation(product.name)!;
                             const optionHint = presentation.optionType === "temperature"
-                              ? "Hot / Iced available"
+                              ? "Hot / Ice"
                               : presentation.optionType === "mixer"
-                                ? "Orange / Soda available"
+                                ? "Orange / Soda"
                                 : null;
                             return (
                               <article key={product.id} className="rounded-md border border-[#49323F] bg-gradient-to-br from-[#261D23] to-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="min-w-0">
-                                    <p className="mb-0.5 text-[10px] tracking-[0.16em] text-[#A18F96]">{presentation.reading}</p>
-                                    <p className="font-serif text-lg tracking-wide text-[#F3EDEB]">{presentation.english}</p>
+                                    <p className="mb-0.5 text-xs tracking-[0.12em] text-[#B8A8AD]">{presentation.reading}</p>
+                                    <p className="font-sans text-lg font-medium tracking-normal text-[#F3EDEB]">{presentation.english}</p>
                                     {optionHint && <p className="mt-1 text-[11px] tracking-wide text-[#A18F96]">{optionHint}</p>}
                                     {!product.is_available && <p className="mt-1 text-xs font-semibold tracking-wide text-[#F08A91]">SOLD OUT</p>}
                                   </div>
@@ -1029,7 +1061,7 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">YOUR ORDERS</p>
-              <h2 className="mt-1 font-serif text-2xl font-semibold tracking-wide text-[#F3EDEB]">Your Orders</h2>
+              <h2 className="mt-1 font-sans text-2xl font-semibold tracking-wide text-[#F3EDEB]">Your Orders</h2>
             </div>
             {currentOrders.length === 0 ? (
               <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center">
@@ -1046,7 +1078,10 @@ export default function Home() {
                     <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold text-[#F3EDEB]">{orderDate.date} {orderDate.time}</p>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.date}</span>
+                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.time}</span>
+                          </div>
                           <p className="mt-1 text-xs text-[#A18F96]">注文番号 #{order.id}</p>
                         </div>
                         <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-xs font-bold text-[#D7B77C]">
@@ -1060,7 +1095,10 @@ export default function Home() {
                           const partiallyServed = served > 0 && served < item.quantity;
                           return (
                             <div key={index} className="flex items-center justify-between gap-3 text-sm">
-                              <span className={fullyServed ? "text-[#D7B77C]" : "text-[#F3EDEB]"}>{getMenuPresentation(item.productName)?.english ?? item.productName}{item.option ? ` · ${item.option}` : ""} × {item.quantity}</span>
+                              <span className={fullyServed ? "text-[#D7B77C]" : "text-[#F3EDEB]"}>
+                                {getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}
+                                {item.option && <span className="ml-2 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
+                              </span>
                               <span className="shrink-0 text-right text-xs font-semibold text-[#C5B7BA]">
                                 {fullyServed ? "提供済み" : partiallyServed ? `${served} / ${item.quantity} 提供済み` : `0 / ${item.quantity} 提供待ち`}
                               </span>
@@ -1075,14 +1113,7 @@ export default function Home() {
               </div>
             )}
 
-            {checkoutOrders.length > 0 && (
-              <div className="mt-5 rounded-md border border-[#A9785D]/50 bg-gradient-to-br from-[#382832] to-[#1B151A] p-4">
-                <div className="flex items-center justify-between text-lg font-semibold text-[#F3EDEB]">
-                  <span>お会計合計</span><span className="text-[#D7B77C]">¥{orderTotal.toLocaleString("en-US")}</span>
-                </div>
-                <button onClick={() => setShowPaymentModal(true)} className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-3.5 font-bold text-[#FFF9F5] transition hover:bg-[#87445F]">お会計へ進む</button>
-              </div>
-            )}
+
           </section>
         )}
 
@@ -1091,7 +1122,7 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">ORDER HISTORY</p>
-              <h2 className="mt-1 font-serif text-2xl font-semibold tracking-wide text-[#F3EDEB]">Order History</h2>
+              <h2 className="mt-1 font-sans text-2xl font-semibold tracking-wide text-[#F3EDEB]">Order History</h2>
             </div>
             {servedOrders.length === 0 ? (
               <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center text-sm text-[#A18F96]">提供済みのご注文はまだありません。</div>
@@ -1104,7 +1135,10 @@ export default function Home() {
                     <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold text-[#F3EDEB]">{orderDate.date} {orderDate.time}</p>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.date}</span>
+                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.time}</span>
+                          </div>
                           <p className="mt-1 text-xs text-[#A18F96]">注文番号 #{order.id}</p>
                         </div>
                         <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-xs font-bold text-[#D7B77C]">提供済み</span>
@@ -1112,7 +1146,7 @@ export default function Home() {
                       <div className="mt-4 space-y-2 border-t border-[#49323F] pt-4">
                         {order.items.map((item, index) => (
                           <div key={index} className="flex items-center justify-between gap-3 text-sm text-[#F3EDEB]">
-                            <span>{getMenuPresentation(item.productName)?.english ?? item.productName}{item.option ? ` · ${item.option}` : ""} × {item.quantity}</span>
+                            <span>{getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}{item.option && <span className="ml-2 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}</span>
                             <span className="text-[#C5B7BA]">¥{(item.price * item.quantity).toLocaleString("en-US")}</span>
                           </div>
                         ))}
@@ -1162,35 +1196,37 @@ export default function Home() {
 
       </div>
 
-      {/* カート固定ボタン */}
-      <button
-        onClick={() => setCartOpen(true)}
-        className="fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-md rounded-md bg-[#71364F] px-5 py-4 font-bold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#87445F] active:scale-[0.99]"
-      >
-        Your Cart
-        {cartQuantity > 0 && (
-          <>
-            <span className="mx-2">・</span>
-            {cartQuantity} items
-            <span className="mx-2">・</span>
-            ¥{total.toLocaleString("en-US")}
-          </>
+      {/* カート・お会計の固定ボタン */}
+      <div className="fixed bottom-4 left-4 right-4 z-40 mx-auto flex max-w-md gap-2">
+        <button
+          onClick={() => setCartOpen(true)}
+          className={`${checkoutOrders.length > 0 ? "flex-1" : "w-full"} rounded-md border border-[#A9785D]/50 bg-[#382832] px-4 py-4 font-semibold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#49323F] active:scale-[0.99]`}
+        >
+          カート{cartQuantity > 0 ? ` ・ ${cartQuantity}点 ・ ¥${total.toLocaleString("ja-JP")}` : "を見る"}
+        </button>
+        {checkoutOrders.length > 0 && (
+          <button
+            onClick={() => setShowPaymentModal(true)}
+            className="flex-1 rounded-md bg-[#71364F] px-4 py-4 font-semibold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#87445F] active:scale-[0.99]"
+          >
+            お会計へ ・ ¥{orderTotal.toLocaleString("ja-JP")}
+          </button>
         )}
-      </button>
+      </div>
 
       {/* 商品オプション選択 */}
       {optionProduct && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0A080B]/75 p-4 sm:items-center">
           <div className="w-full max-w-md rounded-md border border-[#49323F] bg-[#1B151A] p-5 shadow-2xl">
             <p className="text-[10px] tracking-[0.2em] text-[#D7B77C]">SELECT OPTION</p>
-            <h2 className="mt-1 font-serif text-2xl text-[#F3EDEB]">{getMenuPresentation(optionProduct.name)?.english}</h2>
+            <h2 className="mt-1 font-sans text-2xl text-[#F3EDEB]">{getMenuPresentation(optionProduct.name)?.english}</h2>
             <p className="mt-1 text-xs text-[#A18F96]">{getMenuPresentation(optionProduct.name)?.reading}</p>
             <div className="mt-5 grid grid-cols-2 gap-3">
-              {(getMenuPresentation(optionProduct.name)?.optionType === "temperature" ? ["Hot", "Iced"] : ["Orange", "Soda"]).map((option) => (
-                <button key={option} onClick={() => addToCart(optionProduct, option)} className="rounded-md border border-[#A9785D]/60 bg-[#382832] px-4 py-4 font-serif text-lg text-[#F3EDEB] transition hover:bg-[#49323F]">{option}</button>
+              {(getMenuPresentation(optionProduct.name)?.optionType === "temperature" ? ["Hot", "Ice"] : ["Orange", "Soda"]).map((option) => (
+                <button key={option} onClick={() => addToCart(optionProduct, option)} className="rounded-md border border-[#A9785D]/60 bg-[#382832] px-4 py-4 font-sans text-lg text-[#F3EDEB] transition hover:bg-[#49323F]">{option}</button>
               ))}
             </div>
-            <button onClick={() => setOptionProduct(null)} className="mt-4 w-full rounded-md border border-[#49323F] px-4 py-3 text-sm text-[#C5B7BA]">Cancel</button>
+            <button onClick={() => setOptionProduct(null)} className="mt-4 w-full rounded-md border border-[#49323F] px-4 py-3 text-sm text-[#C5B7BA]">戻る</button>
           </div>
         </div>
       )}
@@ -1200,8 +1236,8 @@ export default function Home() {
         <div className="fixed inset-0 z-50 bg-[#0A080B]/70">
           <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-md rounded-t-2xl bg-[#1B151A] p-5 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h2 className="font-serif text-xl font-semibold text-[#F3EDEB]">
-                Your Cart
+              <h2 className="font-sans text-xl font-semibold text-[#F3EDEB]">
+                カート
               </h2>
 
               <button
@@ -1214,7 +1250,7 @@ export default function Home() {
 
             {cart.length === 0 ? (
               <div className="py-10 text-center text-[#A18F96]">
-                Your cart is empty
+                カートは空です
               </div>
             ) : (
               <>
@@ -1227,8 +1263,9 @@ export default function Home() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-bold text-[#F3EDEB]">
-                            {getMenuPresentation(item.name)?.english ?? item.name}{item.option ? ` · ${item.option}` : ""}
+                            {getMenuPresentation(item.name)?.english ?? item.name}
                           </p>
+                          {item.option && <span className="mt-1 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
 
                           <p className="text-sm text-[#C5B7BA]">
                             ¥{item.price.toLocaleString("en-US")} ×{" "}
