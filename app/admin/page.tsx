@@ -20,10 +20,22 @@ type Order = {
   }[];
 };
 
+type Product = {
+  id: number;
+  name: string;
+  price: number;
+  category: string | null;
+  is_available: boolean;
+};
+
 export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+
+  // 商品管理用
+  const [products, setProducts] = useState<Product[]>([]);
+  const [updatingProductIds, setUpdatingProductIds] = useState<number[]>([]);
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -246,8 +258,24 @@ export default function AdminPage() {
       setHistoryOrders(ordersWithDetails);
     };
 
+    // 商品一覧を取得
+    const loadProducts = async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, price, category, is_available")
+        .order("id", { ascending: true });
+
+      if (error) {
+        console.error("商品一覧取得エラー:", error);
+        return;
+      }
+
+      setProducts(data || []);
+    };
+
     loadOrders();
     loadHistory();
+    loadProducts();
 
     const channel = supabase
       .channel("admin-orders")
@@ -287,6 +315,17 @@ export default function AdminPage() {
           loadHistory();
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "products",
+        },
+        () => {
+          loadProducts();
+        }
+      )
       .subscribe((status, err) => {
         console.log("Realtime status:", status, err);
       });
@@ -295,6 +334,42 @@ export default function AdminPage() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // 商品の販売状態を切り替える
+  const toggleProductAvailability = async (product: Product) => {
+    if (updatingProductIds.includes(product.id)) return;
+
+    const nextAvailability = !product.is_available;
+
+    setUpdatingProductIds((current) => [...current, product.id]);
+
+    const { error } = await supabase
+      .from("products")
+      .update({
+        is_available: nextAvailability,
+      })
+      .eq("id", product.id);
+
+    if (error) {
+      console.error("商品状態変更エラー:", error);
+      alert("商品の販売状態の変更に失敗しました");
+    } else {
+      setProducts((currentProducts) =>
+        currentProducts.map((currentProduct) =>
+          currentProduct.id === product.id
+            ? {
+                ...currentProduct,
+                is_available: nextAvailability,
+              }
+            : currentProduct
+        )
+      );
+    }
+
+    setUpdatingProductIds((current) =>
+      current.filter((id) => id !== product.id)
+    );
+  };
 
   // 商品を1個提供する
   const serveOneItem = async (
@@ -751,6 +826,91 @@ export default function AdminPage() {
       <h1 className="text-3xl font-bold text-[#f1f3f1]">
         スタッフ画面
       </h1>
+
+      {/* 商品管理 */}
+      <section className="mt-6 rounded-xl border border-[#39423e] bg-[#242a27] p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-[#f1f3f1]">
+            商品管理
+          </h2>
+
+          <span className="text-sm text-[#aeb7b2]">
+            {products.filter((product) => product.is_available).length}
+            {" / "}
+            {products.length} 商品販売中
+          </span>
+        </div>
+
+        <p className="mt-2 text-sm text-[#89938e]">
+          売り切れにすると、お客さん側のメニューに表示されなくなります。
+        </p>
+
+        <div className="mt-4 space-y-3">
+          {products.map((product) => {
+            const isUpdating = updatingProductIds.includes(product.id);
+
+            return (
+              <div
+                key={product.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-[#414b46] bg-[#303733] p-3"
+              >
+                <div className="min-w-0">
+                  <p
+                    className={`font-bold ${
+                      product.is_available
+                        ? "text-[#edf0ee]"
+                        : "text-[#89938e]"
+                    }`}
+                  >
+                    {product.name}
+                  </p>
+
+                  <p className="mt-1 text-sm text-[#aeb7b2]">
+                    {product.category || "カテゴリ未設定"} / ¥
+                    {product.price}
+                  </p>
+
+                  <p
+                    className={`mt-1 text-sm font-bold ${
+                      product.is_available
+                        ? "text-[#82b995]"
+                        : "text-[#d7a866]"
+                    }`}
+                  >
+                    {product.is_available
+                      ? "🟢 販売中"
+                      : "🟠 売り切れ"}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() =>
+                    toggleProductAvailability(product)
+                  }
+                  disabled={isUpdating}
+                  className={`shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-[#f5f7f6] transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    product.is_available
+                      ? "bg-[#3f4844] hover:bg-[#4b5651]"
+                      : "bg-[#456f68] hover:bg-[#528077]"
+                  }`}
+                >
+                  {isUpdating
+                    ? "更新中..."
+                    : product.is_available
+                      ? "売り切れにする"
+                      : "販売中に戻す"}
+                </button>
+              </div>
+            );
+          })}
+
+          {products.length === 0 && (
+            <p className="py-4 text-center text-sm text-[#89938e]">
+              商品が登録されていません。
+            </p>
+          )}
+        </div>
+      </section>
 
       <div className="mt-6 flex gap-2">
         <button
