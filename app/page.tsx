@@ -399,12 +399,62 @@ export default function Home() {
 
   // 注文する
   const placeOrder = async () => {
-    if (cart.length === 0 || !customerId || checkoutRequested) {
+    if (cart.length === 0 || !customerId || checkoutRequested || loading) {
       return;
     }
 
     setLoading(true);
 
+    // 注文直前にSupabaseから商品の最新の販売状態を取得
+    const productIds = cart.map((item) => item.id);
+
+    const { data: latestProducts, error: productsError } = await supabase
+      .from("products")
+      .select("id, name, is_available")
+      .in("id", productIds);
+
+    // 最新状態を取得できなければ、安全のため注文を中止
+    if (productsError || !latestProducts) {
+      console.error(productsError);
+      alert("商品の販売状態を確認できませんでした。通信状況を確認して、もう一度お試しください。");
+      setLoading(false);
+      return;
+    }
+
+    // 売り切れ、または商品情報が取得できなかった商品を確認
+    const unavailableItems = cart.filter((item) => {
+      const latestProduct = latestProducts.find(
+        (product) => String(product.id) === String(item.id)
+      );
+
+      return !latestProduct || latestProduct.is_available !== true;
+    });
+
+    // 売り切れ商品があれば注文せず、メニューとカートから削除
+    if (unavailableItems.length > 0) {
+      const unavailableIds = unavailableItems.map((item) => item.id);
+      const unavailableNames = unavailableItems.map((item) => item.name).join("、");
+
+      setProducts((currentProducts) =>
+        currentProducts.filter(
+          (product) => !unavailableIds.some((id) => String(id) === String(product.id))
+        )
+      );
+
+      setCart((currentCart) =>
+        currentCart.filter(
+          (item) => !unavailableIds.some((id) => String(id) === String(item.id))
+        )
+      );
+
+      alert(
+        `以下の商品は売り切れになりました。\n\n${unavailableNames}\n\nカートから削除しました。残りの商品をご確認ください。`
+      );
+      setLoading(false);
+      return;
+    }
+
+    // すべて販売中なら注文登録
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
