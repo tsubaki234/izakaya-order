@@ -8,6 +8,7 @@ type Order = {
   customer_id: string;
   status: string;
   checkout_status: string | null;
+  payment_method: string | null;
   created_at: string;
   nickname: string;
   items: {
@@ -890,6 +891,16 @@ export default function AdminPage() {
                     : "未設定"}
               </p>
 
+              {order.checkout_status === "requested" && (
+                <p className="mt-2 font-bold text-[#82b995]">
+                  支払い方法：{order.payment_method === "cash"
+                    ? "現金"
+                    : order.payment_method === "paypay"
+                      ? "PayPay"
+                      : "未選択"}
+                </p>
+              )}
+
               {order.checkout_status ===
                 "requested" && (
                 <button
@@ -917,6 +928,13 @@ export default function AdminPage() {
 
           {showHistory && (
             <>
+              <p className="mt-2 font-bold text-[#82b995]">
+                支払い方法：{order.payment_method === "cash"
+                  ? "現金"
+                  : order.payment_method === "paypay"
+                    ? "PayPay"
+                    : "未選択（旧データ）"}
+              </p>
               <button
                 onClick={() =>
                   reopenForAdditionalOrder(
