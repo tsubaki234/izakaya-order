@@ -44,6 +44,7 @@ export default function AdminPage() {
         .from("orders")
         .select("*")
         .neq("checkout_status", "paid")
+        .neq("checkout_status", "cancelled")
         .order("created_at", { ascending: true });
 
       if (ordersError) {
@@ -464,8 +465,7 @@ export default function AdminPage() {
       })
       .eq("id", orderId);
   };
-
-  // 注文の商品を全部提供済みにする
+    // 注文の商品を全部提供済みにする
   const serveAllItems = async (orderId: number) => {
     const targetOrder = orders.find(
       (order) => order.id === orderId
@@ -571,6 +571,44 @@ export default function AdminPage() {
               "requested"
           )
       )
+    );
+  };
+
+  // 注文をキャンセルする
+  const cancelOrder = async (order: Order) => {
+    const hasServedItems = order.items.some(
+      (item) => item.served_quantity > 0
+    );
+
+    if (order.checkout_status !== "none" || hasServedItems) {
+      alert("会計依頼済み、または提供を開始した注文はキャンセルできません。");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `${order.nickname}さんの注文（注文ID：${order.id}）をキャンセルしますか？\n\nこの操作は取り消せません。`
+    );
+
+    if (!confirmed) return;
+
+    const { data, error } = await supabase
+      .from("orders")
+      .update({
+        checkout_status: "cancelled",
+      })
+      .eq("id", order.id)
+      .eq("checkout_status", "none")
+      .select("id")
+      .maybeSingle();
+
+    if (error || !data) {
+      if (error) console.error("注文キャンセルエラー:", error);
+      alert("注文のキャンセルに失敗しました。注文状態が変わっていないか確認してください。");
+      return;
+    }
+
+    setOrders((currentOrders) =>
+      currentOrders.filter((currentOrder) => currentOrder.id !== order.id)
     );
   };
 
@@ -836,6 +874,17 @@ export default function AdminPage() {
                   会計済みにする
                 </button>
               )}
+              {order.checkout_status === "none" &&
+                order.items.every(
+                  (item) => item.served_quantity === 0
+                ) && (
+                  <button
+                    onClick={() => cancelOrder(order)}
+                    className="mt-3 w-full rounded-lg border border-[#9b5b55] bg-[#492e2c] px-4 py-3 font-bold text-[#f3d8d5] transition hover:bg-[#5a3835]"
+                  >
+                    この注文をキャンセル
+                  </button>
+                )}
             </>
           )}
 
@@ -857,7 +906,7 @@ export default function AdminPage() {
     );
   };
 
-  return (
+    return (
     <main className="min-h-screen bg-[#171c1a] p-6 text-[#edf0ee]">
       <h1 className="text-3xl font-bold text-[#f1f3f1]">
         スタッフ画面
