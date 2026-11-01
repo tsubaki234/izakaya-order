@@ -41,6 +41,7 @@ export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [activeTab, setActiveTab] = useState<"orders" | "customers" | "calls" | "products" | "history">("orders");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [staffCalls, setStaffCalls] = useState<StaffCall[]>([]);
   const [updatingCallIds, setUpdatingCallIds] = useState<number[]>([]);
@@ -93,7 +94,7 @@ export default function AdminPage() {
         .in("id", customerIds);
 
       if (customersError) {
-        console.error("お客さん取得エラー:", customersError);
+        console.error("お客様取得エラー:", customersError);
         return;
       }
 
@@ -210,7 +211,7 @@ export default function AdminPage() {
         .in("id", customerIds);
 
       if (customersError) {
-        console.error("履歴のお客さん取得エラー:", customersError);
+        console.error("履歴のお客様取得エラー:", customersError);
         return;
       }
 
@@ -606,7 +607,7 @@ export default function AdminPage() {
     );
 
     const confirmed = window.confirm(
-      `${order.nickname}さんの会計を完了しますか？\n\n合計 ¥${total}`
+      `${order.nickname}様の会計を完了しますか？\n\n合計 ¥${total}`
     );
 
     if (!confirmed) return;
@@ -639,13 +640,13 @@ export default function AdminPage() {
     );
   };
 
-  // お客さんの端末をリセットする
+  // お客様の端末をリセットする
   const resetCustomerTerminal = async (
     customerId: string,
     nickname: string
   ) => {
     const confirmed = window.confirm(
-      `${nickname}さんの端末をリセットしますか？\n\nお客さんの画面がニックネーム入力画面に戻ります。`
+      `${nickname}様の端末をリセットしますか？\n\nお客様の画面がニックネーム入力画面に戻ります。`
     );
 
     if (!confirmed) return;
@@ -661,7 +662,7 @@ export default function AdminPage() {
       return;
     }
 
-    alert(`${nickname}さんの端末をリセットしました`);
+    alert(`${nickname}様の端末をリセットしました`);
   };
 
   // 注文をキャンセルする
@@ -676,7 +677,7 @@ export default function AdminPage() {
     }
 
     const confirmed = window.confirm(
-      `${order.nickname}さんの注文（注文ID：${order.id}）をキャンセルしますか？\n\nこの操作は取り消せません。`
+      `${order.nickname}様の注文（注文ID：${order.id}）をキャンセルしますか？\n\nこの操作は取り消せません。`
     );
 
     if (!confirmed) return;
@@ -708,7 +709,7 @@ export default function AdminPage() {
     nickname: string
   ) => {
     const confirmed = window.confirm(
-      `${nickname}さんを追加注文可能な状態に戻しますか？\n\n会計済みの注文が現在の注文に戻ります。`
+      `${nickname}様を追加注文可能な状態に戻しますか？\n\n会計済みの注文が現在の注文に戻ります。`
     );
 
     if (!confirmed) return;
@@ -808,29 +809,29 @@ export default function AdminPage() {
     return (
       <div
         key={order.id}
-        className="rounded-xl border border-[#39423e] bg-[#242a27] p-4 shadow-lg shadow-black/20"
+        className="rounded-xl border border-[#49323F] bg-[#1B151A] p-4 shadow-lg shadow-black/20"
       >
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xl font-bold text-[#f1f3f1]">
-              {order.nickname}さん
+            <p className="text-xl font-bold text-[#F3EDEB]">
+              {order.nickname}様
             </p>
 
-            <p className="mt-1 text-sm text-[#aeb7b2]">
+            <p className="mt-1 text-sm text-[#C5B7BA]">
               {orderDate.date} {orderDate.time}
             </p>
           </div>
 
           <div className="text-right">
             {showHistory && (
-              <span className="text-sm font-bold text-[#82b995]">
+              <span className="text-sm font-bold text-[#D8B58A]">
                 🟢 会計済み
               </span>
             )}
 
             {!showHistory &&
               order.checkout_status === "requested" && (
-                <span className="text-sm font-bold text-[#d7a866]">
+                <span className="text-sm font-bold text-[#D7B77C]">
                   🟠 お会計依頼中
                 </span>
               )}
@@ -845,30 +846,30 @@ export default function AdminPage() {
             return (
               <div
                 key={item.id}
-                className="rounded-lg border border-[#414b46] bg-[#303733] p-3"
+                className="rounded-lg border border-[#49323F] bg-[#261D23] p-3"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p
                       className={`font-bold ${
                         isFullyServed
-                          ? "text-[#8fbd9e]"
-                          : "text-[#edf0ee]"
+                          ? "text-[#D8B58A]"
+                          : "text-[#F3EDEB]"
                       }`}
                     >
                       {isFullyServed && "🟢 "}
                       {item.name} × {item.quantity}
                     </p>
 
-                    <p className="mt-1 text-sm text-[#aeb7b2]">
+                    <p className="mt-1 text-sm text-[#C5B7BA]">
                       ¥{item.price * item.quantity}
                     </p>
 
                     <p
                       className={`mt-1 text-sm font-bold ${
                         isFullyServed
-                          ? "text-[#82b995]"
-                          : "text-[#d7a866]"
+                          ? "text-[#D8B58A]"
+                          : "text-[#D7B77C]"
                       }`}
                     >
                       提供済み：{item.served_quantity} /{" "}
@@ -885,14 +886,14 @@ export default function AdminPage() {
                             item.id
                           )
                         }
-                        className="shrink-0 rounded-lg bg-[#456f68] px-3 py-2 text-sm font-bold text-[#f5f7f6] transition hover:bg-[#528077]"
+                        className="shrink-0 rounded-lg bg-[#71364F] px-3 py-2 text-sm font-bold text-[#FFF9F5] transition hover:bg-[#87445F]"
                       >
                         ＋ 提供
                       </button>
                     )}
 
                   {isFullyServed && (
-                    <span className="shrink-0 text-sm font-bold text-[#82b995]">
+                    <span className="shrink-0 text-sm font-bold text-[#D8B58A]">
                       提供完了
                     </span>
                   )}
@@ -902,11 +903,11 @@ export default function AdminPage() {
           })}
         </div>
 
-        <div className="mt-4 border-t border-[#414b46] pt-4 text-xl font-bold text-[#f1f3f1]">
+        <div className="mt-4 border-t border-[#49323F] pt-4 text-xl font-bold text-[#F3EDEB]">
           合計 ¥{total}
         </div>
 
-        <div className="mt-4 border-t border-[#414b46] pt-4 text-sm text-[#aeb7b2]">
+        <div className="mt-4 border-t border-[#49323F] pt-4 text-sm text-[#C5B7BA]">
           <p>注文ID：{order.id}</p>
 
           {!showHistory && (
@@ -914,8 +915,8 @@ export default function AdminPage() {
               <p
                 className={`mt-1 font-bold ${
                   order.status === "served"
-                    ? "text-[#82b995]"
-                    : "text-[#d7a866]"
+                    ? "text-[#D8B58A]"
+                    : "text-[#D7B77C]"
                 }`}
               >
                 状態：
@@ -929,7 +930,7 @@ export default function AdminPage() {
                   onClick={() =>
                     serveAllItems(order.id)
                   }
-                  className="mt-4 w-full rounded-lg bg-[#456f68] px-4 py-3 font-bold text-[#f5f7f6] transition hover:bg-[#528077]"
+                  className="mt-4 w-full rounded-lg bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] transition hover:bg-[#87445F]"
                 >
                   この注文を全部提供済みにする
                 </button>
@@ -939,8 +940,8 @@ export default function AdminPage() {
                 className={`mt-3 font-bold ${
                   order.checkout_status ===
                   "requested"
-                    ? "text-[#d7a866]"
-                    : "text-[#aeb7b2]"
+                    ? "text-[#D7B77C]"
+                    : "text-[#C5B7BA]"
                 }`}
               >
                 お会計：
@@ -954,7 +955,7 @@ export default function AdminPage() {
               </p>
 
               {order.checkout_status === "requested" && (
-                <p className="mt-2 font-bold text-[#82b995]">
+                <p className="mt-2 font-bold text-[#D8B58A]">
                   支払い方法：{order.payment_method === "cash"
                     ? "現金"
                     : order.payment_method === "paypay"
@@ -969,7 +970,7 @@ export default function AdminPage() {
                   onClick={() =>
                     completeCheckout(order)
                   }
-                  className="mt-4 w-full rounded-lg bg-[#527d65] px-4 py-3 font-bold text-[#f5f7f6] transition hover:bg-[#629477]"
+                  className="mt-4 w-full rounded-lg bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] transition hover:bg-[#87445F]"
                 >
                   会計済みにする
                 </button>
@@ -980,7 +981,7 @@ export default function AdminPage() {
                 ) && (
                   <button
                     onClick={() => cancelOrder(order)}
-                    className="mt-3 w-full rounded-lg border border-[#9b5b55] bg-[#492e2c] px-4 py-3 font-bold text-[#f3d8d5] transition hover:bg-[#5a3835]"
+                    className="mt-3 w-full rounded-lg border border-[#A9785D] bg-[#382832] px-4 py-3 font-bold text-[#F3D9AE] transition hover:bg-[#49323F]"
                   >
                     この注文をキャンセル
                   </button>
@@ -990,7 +991,7 @@ export default function AdminPage() {
 
           {showHistory && (
             <>
-              <p className="mt-2 font-bold text-[#82b995]">
+              <p className="mt-2 font-bold text-[#D8B58A]">
                 支払い方法：{order.payment_method === "cash"
                   ? "現金"
                   : order.payment_method === "paypay"
@@ -1004,7 +1005,7 @@ export default function AdminPage() {
                     order.nickname
                   )
                 }
-                className="mt-4 w-full rounded-lg bg-[#3f4844] px-4 py-3 font-bold text-[#e8ecea] transition hover:bg-[#4b5651]"
+                className="mt-4 w-full rounded-lg bg-[#382832] px-4 py-3 font-bold text-[#F3EDEB] transition hover:bg-[#49323F]"
               >
                 追加注文を受け付ける
               </button>
@@ -1016,7 +1017,7 @@ export default function AdminPage() {
                     order.nickname
                   )
                 }
-                className="mt-3 w-full rounded-lg border border-[#527d65] bg-[#30463a] px-4 py-3 font-bold text-[#cce5d4] transition hover:bg-[#3a5545]"
+                className="mt-3 w-full rounded-lg border border-[#71364F] bg-[#382832] px-4 py-3 font-bold text-[#F3D9AE] transition hover:bg-[#49323F]"
               >
                 端末をリセット
               </button>
@@ -1027,286 +1028,180 @@ export default function AdminPage() {
     );
   };
 
+  const orderBadgeCount = orders.filter((order) => order.status !== "served" || order.checkout_status === "requested").length;
+  const soldOutCount = products.filter((product) => !product.is_available).length;
+
+  const tabs = [
+    { id: "orders" as const, label: "注文", badge: orderBadgeCount },
+    { id: "customers" as const, label: "お客様", badge: activeCustomers.length },
+    { id: "calls" as const, label: "呼び出し", badge: staffCalls.length },
+    { id: "products" as const, label: "商品", badge: soldOutCount },
+    { id: "history" as const, label: "履歴", badge: 0 },
+  ];
+
   return (
-    <main className="min-h-screen bg-[#171c1a] p-6 text-[#edf0ee]">
-      <h1 className="text-3xl font-bold text-[#f1f3f1]">
-        スタッフ画面
-      </h1>
-
-      {/* スタッフ呼び出し */}
-      <section className="mt-6 rounded-xl border border-[#9b7448] bg-[#30291f] p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-[#f1f3f1]">
-            🔔 スタッフ呼び出し
-          </h2>
-          <span className="rounded-full bg-[#6a4c2d] px-3 py-1 text-sm font-bold text-[#f4d7ad]">
-            {staffCalls.length}件
-          </span>
-        </div>
-
-        {staffCalls.length === 0 ? (
-          <p className="mt-3 text-sm text-[#aeb7b2]">
-            呼び出しはありません。
-          </p>
-        ) : (
-          <div className="mt-3 space-y-3">
-            {staffCalls.map((call) => (
-              <div
-                key={call.id}
-                className="rounded-lg border border-[#6a5438] bg-[#3a3024] p-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-bold text-[#f1f3f1]">
-                      {call.nickname}さん
-                    </p>
-                    <p className="mt-1 text-sm text-[#d7a866]">
-                      {new Date(call.created_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} 呼び出し
-                    </p>
-                  </div>
-                  <span className="text-sm font-bold text-[#f4d7ad]">未対応</span>
-                </div>
-                <button
-                  onClick={() => completeStaffCall(call)}
-                  disabled={updatingCallIds.includes(call.id)}
-                  className="mt-3 w-full rounded-lg bg-[#456f68] px-4 py-3 font-bold text-[#f5f7f6] transition hover:bg-[#528077] disabled:opacity-50"
-                >
-                  {updatingCallIds.includes(call.id) ? "更新中..." : "対応済みにする"}
-                </button>
-              </div>
-            ))}
+    <main className="min-h-screen bg-[#100D10] px-3 py-5 text-[#F3EDEB] sm:px-6 sm:py-7">
+      <div className="mx-auto max-w-5xl">
+        <header className="mb-6 flex items-end justify-between gap-3 border-b border-[#49323F] pb-5">
+          <div>
+            <p className="text-[10px] font-semibold tracking-[0.34em] text-[#D7B77C]">BAR & MUSIC</p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-[0.22em] text-[#F3EDEB]">myonga</h1>
+            <p className="mt-1 text-xs tracking-wide text-[#A18F96]">STAFF CONSOLE</p>
           </div>
-        )}
-      </section>
+          <span className="rounded-full border border-[#49323F] bg-[#1B151A] px-3 py-1.5 text-xs text-[#C5B7BA]">管理画面</span>
+        </header>
 
-      {/* 商品管理 */}
-      <section className="mt-6 rounded-xl border border-[#39423e] bg-[#242a27] p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold text-[#f1f3f1]">
-            商品管理
-          </h2>
+        <nav className="sticky top-0 z-30 -mx-3 mb-6 grid grid-cols-5 gap-1 border-y border-[#49323F] bg-[#100D10]/95 px-2 py-2 backdrop-blur sm:static sm:mx-0 sm:rounded-2xl sm:border sm:bg-[#1B151A] sm:p-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setShowHistory(tab.id === "history");
+                if (tab.id !== "customers") setSelectedCustomerId(null);
+              }}
+              className={`relative flex min-h-12 items-center justify-center rounded-xl px-1 py-2 text-xs font-semibold tracking-wide transition sm:text-sm ${
+                activeTab === tab.id
+                  ? "bg-[#71364F] text-[#FFF9F5] shadow-[0_5px_16px_rgba(0,0,0,0.28)]"
+                  : "text-[#C5B7BA] hover:bg-[#382832]"
+              }`}
+            >
+              {tab.label}
+              {tab.badge > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#100D10] bg-[#C83D4D] px-1 text-[10px] font-black leading-none text-white">
+                  {tab.badge > 99 ? "99+" : tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
 
-          <span className="text-sm text-[#aeb7b2]">
-            {products.filter((product) => product.is_available).length}
-            {" / "}
-            {products.length} 商品販売中
-          </span>
-        </div>
-
-        <p className="mt-2 text-sm text-[#89938e]">
-          売り切れにすると、お客さん側のメニューに表示されなくなります。
-        </p>
-
-        <div className="mt-4 space-y-3">
-          {products.map((product) => {
-            const isUpdating = updatingProductIds.includes(product.id);
-
-            return (
-              <div
-                key={product.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-[#414b46] bg-[#303733] p-3"
-              >
-                <div className="min-w-0">
-                  <p
-                    className={`font-bold ${
-                      product.is_available
-                        ? "text-[#edf0ee]"
-                        : "text-[#89938e]"
-                    }`}
-                  >
-                    {product.name}
-                  </p>
-
-                  <p className="mt-1 text-sm text-[#aeb7b2]">
-                    {product.category || "カテゴリ未設定"} / ¥
-                    {product.price}
-                  </p>
-
-                  <p
-                    className={`mt-1 text-sm font-bold ${
-                      product.is_available
-                        ? "text-[#82b995]"
-                        : "text-[#d7a866]"
-                    }`}
-                  >
-                    {product.is_available
-                      ? "🟢 販売中"
-                      : "🟠 売り切れ"}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() =>
-                    toggleProductAvailability(product)
-                  }
-                  disabled={isUpdating}
-                  className={`shrink-0 rounded-lg px-3 py-2 text-sm font-bold text-[#f5f7f6] transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    product.is_available
-                      ? "bg-[#3f4844] hover:bg-[#4b5651]"
-                      : "bg-[#456f68] hover:bg-[#528077]"
-                  }`}
-                >
-                  {isUpdating
-                    ? "更新中..."
-                    : product.is_available
-                      ? "売り切れにする"
-                      : "販売中に戻す"}
-                </button>
+        {activeTab === "orders" && (
+          <section>
+            <div className="mb-5 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">ORDER MANAGEMENT</p>
+                <h2 className="mt-1 text-2xl font-semibold">注文管理</h2>
               </div>
-            );
-          })}
-
-          {products.length === 0 && (
-            <p className="py-4 text-center text-sm text-[#89938e]">
-              商品が登録されていません。
-            </p>
-          )}
-        </div>
-      </section>
-
-      <div className="mt-6 flex gap-2">
-        <button
-          onClick={() => setShowHistory(false)}
-          className={`rounded-lg px-4 py-2 font-bold transition ${
-            !showHistory
-              ? "bg-[#456f68] text-[#f5f7f6]"
-              : "bg-[#292f2c] text-[#aeb7b2] hover:bg-[#343c38]"
-          }`}
-        >
-          現在の注文
-        </button>
-
-        <button
-          onClick={() => setShowHistory(true)}
-          className={`rounded-lg px-4 py-2 font-bold transition ${
-            showHistory
-              ? "bg-[#456f68] text-[#f5f7f6]"
-              : "bg-[#292f2c] text-[#aeb7b2] hover:bg-[#343c38]"
-          }`}
-        >
-          会計履歴
-        </button>
-      </div>
-
-      {!showHistory ? (
-        <>
-          <section className="mt-6 rounded-xl border border-[#39423e] bg-[#242a27] p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-bold text-[#f1f3f1]">
-                お客さん一覧
-              </h2>
-              <span className="text-sm text-[#aeb7b2]">
-                {activeCustomers.length}名
-              </span>
+              <span className="text-xs text-[#A18F96]">未提供 {unservedOrders.length}件</span>
             </div>
+            {selectedCustomerId && (
+              <div className="mb-4 flex items-center justify-between rounded-xl border border-[#A9785D]/50 bg-[#261D23] px-4 py-3">
+                <span className="text-sm text-[#D7B77C]">お客様を絞り込み中</span>
+                <button onClick={() => setSelectedCustomerId(null)} className="text-sm font-semibold text-[#F3EDEB] underline underline-offset-4">解除</button>
+              </div>
+            )}
+            <div className="mb-7">
+              <h3 className="mb-3 text-sm font-semibold tracking-wide text-[#D7B77C]">未提供</h3>
+              <div className="space-y-3">
+                {unservedOrders.map(renderOrder)}
+                {unservedOrders.length === 0 && <p className="rounded-xl border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">未提供の注文はありません。</p>}
+              </div>
+            </div>
+            <div>
+              <h3 className="mb-3 text-sm font-semibold tracking-wide text-[#C5B7BA]">提供済み</h3>
+              <div className="space-y-3">
+                {servedOrders.map(renderOrder)}
+                {servedOrders.length === 0 && <p className="rounded-xl border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">提供済みの注文はありません。</p>}
+              </div>
+            </div>
+          </section>
+        )}
 
-            <p className="mt-2 text-sm text-[#89938e]">
-              お客さんを選択すると、その人の注文だけを表示します。
-            </p>
-
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {activeTab === "customers" && (
+          <section>
+            <div className="mb-5">
+              <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">GUESTS</p>
+              <h2 className="mt-1 text-2xl font-semibold">お客様一覧</h2>
+              <p className="mt-2 text-sm text-[#A18F96]">お客様を選択すると、その方の注文だけを表示します。</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
               {activeCustomers.map((customer) => {
-                const isSelected =
-                  selectedCustomerId === customer.customer_id;
-
+                const selected = selectedCustomerId === customer.customer_id;
                 return (
-                  <button
-                    key={customer.customer_id}
-                    onClick={() =>
-                      setSelectedCustomerId(
-                        isSelected ? null : customer.customer_id
-                      )
-                    }
-                    className={`rounded-lg border p-3 text-left transition ${
-                      isSelected
-                        ? "border-[#82b995] bg-[#303d35]"
-                        : "border-[#414b46] bg-[#303733] hover:bg-[#39423e]"
-                    }`}
-                  >
+                  <button key={customer.customer_id} onClick={() => { setSelectedCustomerId(selected ? null : customer.customer_id); setActiveTab("orders"); setShowHistory(false); }} className={`rounded-2xl border p-4 text-left transition ${selected ? "border-[#D7B77C] bg-[#382832]" : "border-[#49323F] bg-[#1B151A] hover:bg-[#261D23]"}`}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-[#f1f3f1]">
-                        {customer.nickname}さん
-                      </span>
-                      {isSelected && (
-                        <span className="text-xs font-bold text-[#82b995]">
-                          表示中
-                        </span>
-                      )}
+                      <span className="font-semibold text-[#F3EDEB]">{customer.nickname} 様</span>
+                      <span className="text-xs text-[#D7B77C]">注文を見る →</span>
                     </div>
-                    <p className="mt-2 text-sm text-[#aeb7b2]">
-                      {customer.orderCount}件の注文 / 商品合計{" "}
-                      {customer.itemCount}個
-                    </p>
+                    <p className="mt-2 text-sm text-[#C5B7BA]">{customer.orderCount}件の注文 / 商品 {customer.itemCount}点</p>
                   </button>
                 );
               })}
-
-              {activeCustomers.length === 0 && (
-                <p className="py-3 text-sm text-[#89938e]">
-                  現在注文中のお客さんはいません。
-                </p>
-              )}
+              {activeCustomers.length === 0 && <p className="rounded-xl border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">現在ご注文中のお客様はいません。</p>}
             </div>
-
-            {selectedCustomerId && (
-              <button
-                onClick={() => setSelectedCustomerId(null)}
-                className="mt-3 rounded-lg bg-[#3f4844] px-4 py-2 text-sm font-bold text-[#e8ecea] transition hover:bg-[#4b5651]"
-              >
-                全員の注文を表示
-              </button>
-            )}
           </section>
+        )}
 
-          <div className="mt-6">
-            <h2 className="text-2xl font-bold text-[#d7a866]">
-              🟠 未提供
-              <span className="ml-2 text-base font-normal text-[#89938e]">
-                {unservedOrders.length}件
-              </span>
-            </h2>
-
-            <div className="mt-4 space-y-4">
-              {unservedOrders.map(renderOrder)}
-
-              {unservedOrders.length === 0 && (
-                <p className="text-[#89938e]">
-                  未提供の注文はありません。
-                </p>
-              )}
+        {activeTab === "calls" && (
+          <section>
+            <div className="mb-5 flex items-end justify-between">
+              <div>
+                <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">GUEST ASSISTANCE</p>
+                <h2 className="mt-1 text-2xl font-semibold">スタッフ呼び出し</h2>
+              </div>
+              <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-sm font-semibold text-[#D7B77C]">未対応 {staffCalls.length}件</span>
             </div>
-          </div>
-
-          <div className="mt-10">
-            <h2 className="text-2xl font-bold text-[#82b995]">
-              🟢 提供済み
-              <span className="ml-2 text-base font-normal text-[#89938e]">
-                {servedOrders.length}件
-              </span>
-            </h2>
-
-            <div className="mt-4 space-y-4">
-              {servedOrders.map(renderOrder)}
-
-              {servedOrders.length === 0 && (
-                <p className="text-[#89938e]">
-                  提供済みの注文はありません。
-                </p>
-              )}
+            <div className="space-y-3">
+              {staffCalls.map((call) => (
+                <article key={call.id} className="rounded-2xl border border-[#A9785D]/40 bg-gradient-to-br from-[#261D23] to-[#1B151A] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-[#F3EDEB]">{call.nickname} 様</p>
+                      <p className="mt-1 text-xs text-[#D7B77C]">{new Date(call.created_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} 呼び出し</p>
+                    </div>
+                    <span className="rounded-full bg-[#C83D4D]/15 px-3 py-1 text-xs font-bold text-[#F08A91]">未対応</span>
+                  </div>
+                  <button onClick={() => completeStaffCall(call)} disabled={updatingCallIds.includes(call.id)} className="mt-4 w-full rounded-xl bg-[#71364F] px-4 py-3 font-semibold text-[#FFF9F5] transition hover:bg-[#87445F] disabled:opacity-50">{updatingCallIds.includes(call.id) ? "更新中..." : "対応済みにする"}</button>
+                </article>
+              ))}
+              {staffCalls.length === 0 && <p className="rounded-xl border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">未対応の呼び出しはありません。</p>}
             </div>
-          </div>
-        </>
-      ) : (
-        <div className="mt-6 space-y-4">
-          {displayOrders.map(renderOrder)}
+          </section>
+        )}
 
-          {displayOrders.length === 0 && (
-            <p className="text-[#89938e]">
-              会計履歴はありません。
-            </p>
-          )}
-        </div>
-      )}
+        {activeTab === "products" && (
+          <section>
+            <div className="mb-5 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">MENU CONTROL</p>
+                <h2 className="mt-1 text-2xl font-semibold">商品管理</h2>
+              </div>
+              <span className="text-xs text-[#C5B7BA]">販売中 {products.filter((product) => product.is_available).length} / {products.length}</span>
+            </div>
+            <p className="mb-4 text-sm text-[#A18F96]">売り切れにすると、お客様側のメニューに表示されなくなります。</p>
+            <div className="space-y-3">
+              {products.map((product) => {
+                const isUpdating = updatingProductIds.includes(product.id);
+                return (
+                  <article key={product.id} className="flex items-center justify-between gap-3 rounded-2xl border border-[#49323F] bg-[#1B151A] p-4">
+                    <div className="min-w-0">
+                      <p className={`font-semibold ${product.is_available ? "text-[#F3EDEB]" : "text-[#A18F96]"}`}>{product.name}</p>
+                      <p className="mt-1 text-sm text-[#C5B7BA]">{product.category || "カテゴリ未設定"} / ¥{product.price.toLocaleString("ja-JP")}</p>
+                      <p className={`mt-1 text-xs font-semibold ${product.is_available ? "text-[#D7B77C]" : "text-[#F08A91]"}`}>{product.is_available ? "販売中" : "売り切れ"}</p>
+                    </div>
+                    <button onClick={() => toggleProductAvailability(product)} disabled={isUpdating} className={`shrink-0 rounded-xl px-3 py-2.5 text-xs font-bold text-[#FFF9F5] transition disabled:opacity-50 ${product.is_available ? "bg-[#382832] hover:bg-[#49323F]" : "bg-[#71364F] hover:bg-[#87445F]"}`}>{isUpdating ? "更新中..." : product.is_available ? "売り切れにする" : "販売中に戻す"}</button>
+                  </article>
+                );
+              })}
+              {products.length === 0 && <p className="rounded-xl border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">商品が登録されていません。</p>}
+            </div>
+          </section>
+        )}
+
+        {activeTab === "history" && (
+          <section>
+            <div className="mb-5">
+              <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">PAYMENT HISTORY</p>
+              <h2 className="mt-1 text-2xl font-semibold">会計履歴</h2>
+            </div>
+            <div className="space-y-3">
+              {displayOrders.map(renderOrder)}
+              {displayOrders.length === 0 && <p className="rounded-xl border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">会計履歴はありません。</p>}
+            </div>
+          </section>
+        )}
+      </div>
     </main>
   );
 }
