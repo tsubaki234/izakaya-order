@@ -465,7 +465,8 @@ export default function AdminPage() {
       })
       .eq("id", orderId);
   };
-    // 注文の商品を全部提供済みにする
+
+  // 注文の商品を全部提供済みにする
   const serveAllItems = async (orderId: number) => {
     const targetOrder = orders.find(
       (order) => order.id === orderId
@@ -561,6 +562,7 @@ export default function AdminPage() {
       return;
     }
 
+
     setOrders((currentOrders) =>
       currentOrders.filter(
         (currentOrder) =>
@@ -572,6 +574,31 @@ export default function AdminPage() {
           )
       )
     );
+  };
+
+  // お客さんの端末をリセットする
+  const resetCustomerTerminal = async (
+    customerId: string,
+    nickname: string
+  ) => {
+    const confirmed = window.confirm(
+      `${nickname}さんの端末をリセットしますか？\n\nお客さんの画面がニックネーム入力画面に戻ります。`
+    );
+
+    if (!confirmed) return;
+
+    const { error } = await supabase
+      .from("customers")
+      .update({ reset_at: new Date().toISOString() })
+      .eq("id", customerId);
+
+    if (error) {
+      console.error("端末リセットエラー:", error);
+      alert("端末リセットに失敗しました");
+      return;
+    }
+
+    alert(`${nickname}さんの端末をリセットしました`);
   };
 
   // 注文をキャンセルする
@@ -889,24 +916,38 @@ export default function AdminPage() {
           )}
 
           {showHistory && (
-            <button
-              onClick={() =>
-                reopenForAdditionalOrder(
-                  order.customer_id,
-                  order.nickname
-                )
-              }
-              className="mt-4 w-full rounded-lg bg-[#3f4844] px-4 py-3 font-bold text-[#e8ecea] transition hover:bg-[#4b5651]"
-            >
-              追加注文を受け付ける
-            </button>
+            <>
+              <button
+                onClick={() =>
+                  reopenForAdditionalOrder(
+                    order.customer_id,
+                    order.nickname
+                  )
+                }
+                className="mt-4 w-full rounded-lg bg-[#3f4844] px-4 py-3 font-bold text-[#e8ecea] transition hover:bg-[#4b5651]"
+              >
+                追加注文を受け付ける
+              </button>
+
+              <button
+                onClick={() =>
+                  resetCustomerTerminal(
+                    order.customer_id,
+                    order.nickname
+                  )
+                }
+                className="mt-3 w-full rounded-lg border border-[#527d65] bg-[#30463a] px-4 py-3 font-bold text-[#cce5d4] transition hover:bg-[#3a5545]"
+              >
+                端末をリセット
+              </button>
+            </>
           )}
         </div>
       </div>
     );
   };
 
-    return (
+  return (
     <main className="min-h-screen bg-[#171c1a] p-6 text-[#edf0ee]">
       <h1 className="text-3xl font-bold text-[#f1f3f1]">
         スタッフ画面

@@ -184,6 +184,48 @@ export default function Home() {
     };
   }, [customerId]);
 
+  // スタッフからの端末リセットを監視
+  useEffect(() => {
+    if (!customerId) return;
+
+    const channel = supabase
+      .channel(`customer-reset-${customerId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "customers",
+          filter: `id=eq.${customerId}`,
+        },
+        (payload) => {
+          const updatedCustomer = payload.new as {
+            reset_at?: string | null;
+          };
+
+          if (!updatedCustomer.reset_at) return;
+
+          localStorage.removeItem("customer_id");
+          setCustomerId(null);
+          setNickname("");
+          setNicknameInput("");
+          setOrderHistory([]);
+          setCheckoutRequested(false);
+          setCheckoutDisplayOrders([]);
+          setCart([]);
+          setCartOpen(false);
+          setOrdered(false);
+          setShowOrderHistory(false);
+          setCheckingCustomer(false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [customerId]);
+
   // お客さん情報を読み込む
   useEffect(() => {
     const loadCustomer = async () => {
@@ -192,11 +234,11 @@ export default function Home() {
       if (savedCustomerId) {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, nickname")
+          .select("id, nickname, reset_at")
           .eq("id", savedCustomerId)
           .single();
 
-        if (!error && data) {
+        if (!error && data && !data.reset_at) {
           setCustomerId(data.id);
           setNickname(data.nickname);
         } else {
