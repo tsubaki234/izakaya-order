@@ -10,6 +10,7 @@ type Order = {
   checkout_status: string | null;
   payment_method: string | null;
   created_at: string;
+  checkout_requested_at: string | null;
   nickname: string;
   items: {
     id: number;
@@ -18,6 +19,7 @@ type Order = {
     price: number;
     quantity: number;
     served_quantity: number;
+    cancelled_quantity: number;
     status: string;
   }[];
 };
@@ -102,6 +104,7 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<"orders" | "checkout" | "customers" | "calls" | "products" | "history">("orders");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [checkoutPaymentCustomerId, setCheckoutPaymentCustomerId] = useState<string | null>(null);
+  const [expandedCheckoutCustomerId, setExpandedCheckoutCustomerId] = useState<string | null>(null);
   const [staffCalls, setStaffCalls] = useState<StaffCall[]>([]);
   const [updatingCallIds, setUpdatingCallIds] = useState<number[]>([]);
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(false);
@@ -202,7 +205,7 @@ export default function AdminPage() {
       const { data: itemsData, error: itemsError } = await supabase
         .from("order_items")
         .select(
-          "id, order_id, product_id, quantity, served_quantity, status, option"
+          "id, order_id, product_id, quantity, served_quantity, cancelled_quantity, status, option"
         )
         .in("order_id", orderIds);
 
@@ -238,6 +241,7 @@ export default function AdminPage() {
             );
 
             const servedQuantity = item.served_quantity ?? 0;
+            const cancelledQuantity = item.cancelled_quantity ?? 0;
 
             return {
               id: item.id,
@@ -246,18 +250,13 @@ export default function AdminPage() {
               price: product?.price ?? 0,
               quantity: item.quantity,
               served_quantity: servedQuantity,
-              status:
-                servedQuantity >= item.quantity
-                  ? "served"
-                  : "pending",
+              cancelled_quantity: cancelledQuantity,
+              status: cancelledQuantity > 0 ? "cancelled" : servedQuantity >= item.quantity ? "served" : "pending",
             };
           });
 
-        const allServed =
-          orderItems.length > 0 &&
-          orderItems.every(
-            (item) => item.served_quantity >= item.quantity
-          );
+        const activeItems = orderItems.filter((item) => item.served_quantity + item.cancelled_quantity < item.quantity);
+        const allServed = activeItems.length === 0;
 
         return {
           ...order,
@@ -267,7 +266,7 @@ export default function AdminPage() {
         };
       });
 
-      const sortedOrders = [...ordersWithDetails].sort((a, b) => {
+      const sortedOrders = [...ordersWithDetails.filter((order) => order.items.some((item) => item.quantity > item.cancelled_quantity))].sort((a, b) => {
         const aServed = a.status === "served";
         const bServed = b.status === "served";
 
@@ -320,7 +319,7 @@ export default function AdminPage() {
       const { data: itemsData, error: itemsError } = await supabase
         .from("order_items")
         .select(
-          "id, order_id, product_id, quantity, served_quantity, status, option"
+          "id, order_id, product_id, quantity, served_quantity, cancelled_quantity, status, option"
         )
         .in("order_id", orderIds);
 
@@ -356,6 +355,7 @@ export default function AdminPage() {
             );
 
             const servedQuantity = item.served_quantity ?? 0;
+            const cancelledQuantity = item.cancelled_quantity ?? 0;
 
             return {
               id: item.id,
@@ -364,18 +364,13 @@ export default function AdminPage() {
               price: product?.price ?? 0,
               quantity: item.quantity,
               served_quantity: servedQuantity,
-              status:
-                servedQuantity >= item.quantity
-                  ? "served"
-                  : "pending",
+              cancelled_quantity: cancelledQuantity,
+              status: cancelledQuantity > 0 ? "cancelled" : servedQuantity >= item.quantity ? "served" : "pending",
             };
           });
 
-        const allServed =
-          orderItems.length > 0 &&
-          orderItems.every(
-            (item) => item.served_quantity >= item.quantity
-          );
+        const activeItems = orderItems.filter((item) => item.served_quantity + item.cancelled_quantity < item.quantity);
+        const allServed = activeItems.length === 0;
 
         return {
           ...order,
@@ -589,29 +584,28 @@ export default function AdminPage() {
 
     if (!targetItem) return;
 
-    if (targetItem.served_quantity >= targetItem.quantity) {
+    if (targetItem.served_quantity + targetItem.cancelled_quantity >= targetItem.quantity) {
       return;
     }
 
     const newServedQuantity =
       targetItem.served_quantity + 1;
 
-    const newStatus =
-      newServedQuantity >= targetItem.quantity
-        ? "served"
-        : "pending";
-
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("order_items")
       .update({
         served_quantity: newServedQuantity,
-        status: newStatus,
+        status: newServedQuantity + targetItem.cancelled_quantity >= targetItem.quantity ? "served" : "pending",
       })
-      .eq("id", itemId);
+      .eq("id", itemId)
+      .eq("served_quantity", targetItem.served_quantity)
+      .eq("cancelled_quantity", targetItem.cancelled_quantity)
+      .select("id")
+      .maybeSingle();
 
-    if (error) {
-      console.error(error);
-      alert("提供状態の変更に失敗しました");
+    if (error || !data) {
+      if (error) console.error(error);
+      alert("提供状態の変更に失敗しました。最新の状態を読み込み直してください。");
       return;
     }
 
@@ -620,7 +614,7 @@ export default function AdminPage() {
         ? {
             ...item,
             served_quantity: newServedQuantity,
-            status: newStatus,
+            status: newServedQuantity + targetItem.cancelled_quantity >= targetItem.quantity ? "served" : "pending",
           }
         : item
     );
@@ -628,7 +622,7 @@ export default function AdminPage() {
     const allServed =
       updatedItems.length > 0 &&
       updatedItems.every(
-        (item) => item.served_quantity >= item.quantity
+        (item) => item.served_quantity + item.cancelled_quantity >= item.quantity
       );
 
     setOrders((currentOrders) =>
@@ -669,7 +663,7 @@ export default function AdminPage() {
   const serveAllCustomerItems = async (customerId: string, nickname: string) => {
     const customerOrders = orders.filter((order) => order.customer_id === customerId);
     const unservedCount = customerOrders.reduce(
-      (sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity), 0),
+      (sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity - item.cancelled_quantity), 0),
       0
     );
     if (unservedCount === 0) {
@@ -692,13 +686,13 @@ export default function AdminPage() {
     setOrders((current) => current.map((order) => order.customer_id !== customerId ? order : ({
       ...order,
       status: "served",
-      items: order.items.map((item) => ({ ...item, served_quantity: item.quantity, status: "served" })),
+      items: order.items.map((item) => ({ ...item, served_quantity: item.quantity - item.cancelled_quantity, status: "served" })),
     })));
   };
 
   // スタッフ側から会計を開始する
   const startCustomerCheckout = async (customerId: string, nickname: string) => {
-    const customerOrders = orders.filter((order) => order.customer_id === customerId && (order.checkout_status === "none" || order.checkout_status === null));
+    const customerOrders = orders.filter((order) => order.customer_id === customerId && (order.checkout_status === "none" || order.checkout_status === null) && order.items.some((item) => item.quantity > item.cancelled_quantity));
     if (customerOrders.length === 0) {
       alert("会計対象の注文がありません。");
       return;
@@ -706,7 +700,7 @@ export default function AdminPage() {
     const ids = customerOrders.map((order) => order.id);
     const { data, error } = await supabase
       .from("orders")
-      .update({ checkout_status: "requested", payment_method: null })
+      .update({ checkout_status: "requested", checkout_requested_at: new Date().toISOString(), payment_method: null })
       .in("id", ids)
       .select("id");
     if (error || !data || data.length !== ids.length) {
@@ -724,7 +718,7 @@ export default function AdminPage() {
     if (!confirmed) return;
     const { data, error } = await supabase
       .from("orders")
-      .update({ checkout_status: "none", payment_method: null })
+      .update({ checkout_status: "none", checkout_requested_at: null, payment_method: null })
       .eq("customer_id", customerId)
       .eq("checkout_status", "requested")
       .select("id");
@@ -758,8 +752,8 @@ export default function AdminPage() {
   const completeCustomerCheckout = async (customerId: string, nickname: string) => {
     const customerOrders = orders.filter((order) => order.customer_id === customerId && order.checkout_status === "requested");
     if (customerOrders.length === 0) return;
-    const total = customerOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * item.quantity, 0), 0);
-    const unservedCount = customerOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity), 0), 0);
+    const total = customerOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * (item.quantity - item.cancelled_quantity), 0), 0);
+    const unservedCount = customerOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity - item.cancelled_quantity), 0), 0);
     const confirmed = window.confirm(`${nickname}様のお会計を完了しますか？\n\n未提供品はございませんか？\n\n未提供：${unservedCount}点\n合計：¥${total.toLocaleString("ja-JP")}`);
     if (!confirmed) return;
     const methods = [...new Set(customerOrders.map((order) => order.payment_method).filter(Boolean))];
@@ -795,42 +789,36 @@ export default function AdminPage() {
     alert(`${nickname}様の端末をリセットしました`);
   };
 
-  // 注文をキャンセルする
-  const cancelOrder = async (order: Order) => {
-    const hasServedItems = order.items.some(
-      (item) => item.served_quantity > 0
-    );
-
-    if (order.checkout_status !== "none" || hasServedItems) {
-      alert("会計依頼済み、または提供を開始した注文はキャンセルできません。");
-      return;
-    }
-
+  // 商品単位で未提供分をキャンセルする（提供済み分は維持）
+  const cancelOrderItem = async (order: Order, item: Order["items"][number]) => {
+    const remaining = Math.max(0, item.quantity - item.served_quantity - item.cancelled_quantity);
+    if (remaining <= 0 || (order.checkout_status !== "none" && order.checkout_status !== null)) return;
     const confirmed = window.confirm(
-      `${order.nickname}様の注文（注文ID：${order.id}）をキャンセルしますか？\n\nこの操作は取り消せません。`
+      `${order.nickname}様の「${getMenuPresentation(item.name)?.english ?? item.name}」をキャンセルしますか？\n\n未提供分 ${remaining}点をキャンセルします。\n提供済みの商品はそのまま残ります。`
     );
-
     if (!confirmed) return;
 
+    const nextCancelled = item.cancelled_quantity + remaining;
     const { data, error } = await supabase
-      .from("orders")
-      .update({
-        checkout_status: "cancelled",
-      })
-      .eq("id", order.id)
-      .eq("checkout_status", "none")
+      .from("order_items")
+      .update({ cancelled_quantity: nextCancelled, status: "served" })
+      .eq("id", item.id)
+      .eq("served_quantity", item.served_quantity)
+      .eq("cancelled_quantity", item.cancelled_quantity)
       .select("id")
       .maybeSingle();
 
     if (error || !data) {
-      if (error) console.error("注文キャンセルエラー:", error);
-      alert("注文のキャンセルに失敗しました。注文状態が変わっていないか確認してください。");
+      if (error) console.error("商品キャンセルエラー:", error);
+      alert("商品のキャンセルに失敗しました。提供状態が更新されていないか確認してください。");
       return;
     }
 
-    setOrders((currentOrders) =>
-      currentOrders.filter((currentOrder) => currentOrder.id !== order.id)
-    );
+    setOrders((current) => current.map((currentOrder) => currentOrder.id !== order.id ? currentOrder : ({
+      ...currentOrder,
+      items: currentOrder.items.map((currentItem) => currentItem.id === item.id ? { ...currentItem, cancelled_quantity: nextCancelled, status: "served" } : currentItem),
+      status: currentOrder.items.every((currentItem) => currentItem.id === item.id ? currentItem.served_quantity + nextCancelled >= currentItem.quantity : currentItem.served_quantity + currentItem.cancelled_quantity >= currentItem.quantity) ? "served" : "pending",
+    })));
   };
 
   // 会計履歴から追加注文可能な状態に戻す
@@ -942,7 +930,7 @@ export default function AdminPage() {
   const renderOrder = (order: Order) => {
     const total = (order.items ?? []).reduce(
       (sum, item) =>
-        sum + item.price * item.quantity,
+        sum + item.price * (item.quantity - item.cancelled_quantity),
       0
     );
 
@@ -977,8 +965,9 @@ export default function AdminPage() {
 
         <div className="mt-4 space-y-3">
           {(order.items ?? []).map((item) => {
-            const isFullyServed =
-              item.served_quantity >= item.quantity;
+            const remainingQuantity = Math.max(0, item.quantity - item.served_quantity - item.cancelled_quantity);
+            const isCancelled = item.cancelled_quantity >= item.quantity;
+            const isFullyServed = remainingQuantity === 0 && !isCancelled;
 
             return (
               <div
@@ -989,13 +978,12 @@ export default function AdminPage() {
                   <div>
                     <p
                       className={`font-bold ${
-                        isFullyServed
-                          ? "text-[#D8B58A]"
-                          : "text-[#F3EDEB]"
+                        isCancelled ? "text-[#A18F96] line-through" : isFullyServed ? "text-[#D8B58A]" : "text-[#F3EDEB]"
                       }`}
                     >
                       {isFullyServed && <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[#D8B58A] align-middle" />}
                       {getMenuPresentation(item.name)?.english ?? item.name} × {item.quantity}
+                      {item.cancelled_quantity > 0 && <span className="ml-2 text-xs font-semibold text-[#F08A91]">{isCancelled ? "キャンセル済み" : `一部キャンセル ${item.cancelled_quantity}点`}</span>}
                     </p>
                     {item.option && (
                       <span className="mt-1 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2.5 py-1 text-xs font-bold tracking-wide text-[#F3D9AE]">
@@ -1004,7 +992,7 @@ export default function AdminPage() {
                     )}
 
                     <p className="mt-1 text-sm text-[#C5B7BA]">
-                      ¥{(item.price * item.quantity).toLocaleString("en-US")}
+                      ¥{(item.price * (item.quantity - item.cancelled_quantity)).toLocaleString("en-US")}
                     </p>
 
                     <p
@@ -1020,7 +1008,7 @@ export default function AdminPage() {
                   </div>
 
                   {!showHistory &&
-                    !isFullyServed && (
+                    remainingQuantity > 0 && (
                       <button
                         onClick={() =>
                           serveOneItem(
@@ -1033,6 +1021,10 @@ export default function AdminPage() {
                         ＋ 提供
                       </button>
                     )}
+
+                  {!showHistory && (order.checkout_status === "none" || order.checkout_status === null) && remainingQuantity > 0 && (
+                    <button type="button" onClick={() => cancelOrderItem(order, item)} className="shrink-0 rounded-md border border-[#C83D4D]/50 px-3 py-2 text-xs font-semibold text-[#F08A91] hover:bg-[#C83D4D]/10">キャンセル</button>
+                  )}
 
                   {isFullyServed && (
                     <span className="shrink-0 text-sm font-bold text-[#D8B58A]">
@@ -1095,17 +1087,7 @@ export default function AdminPage() {
                 </p>
               )}
 
-              {order.checkout_status === "none" &&
-                order.items.every(
-                  (item) => item.served_quantity === 0
-                ) && (
-                  <button
-                    onClick={() => cancelOrder(order)}
-                    className="mt-3 w-full rounded-md border border-[#A9785D] bg-[#382832] px-4 py-3 font-bold text-[#F3D9AE] transition hover:bg-[#49323F]"
-                  >
-                    この注文をキャンセル
-                  </button>
-                )}
+
             </>
           )}
 
@@ -1143,7 +1125,7 @@ export default function AdminPage() {
   const tabs = [
     { id: "orders" as const, label: "注文", icon: "clipboard-list" as const, badge: orderBadgeCount },
     { id: "checkout" as const, label: "お会計", icon: "wallet" as const, badge: orders.filter((order) => order.checkout_status === "requested").length },
-    { id: "customers" as const, label: "お客様", icon: "users" as const, badge: activeCustomers.length },
+    { id: "customers" as const, label: "お客様", icon: "users" as const, badge: 0 },
     { id: "calls" as const, label: "呼び出し", icon: "phone" as const, badge: staffCalls.length },
     { id: "products" as const, label: "商品", icon: "package" as const, badge: soldOutCount },
     { id: "history" as const, label: "履歴", icon: "receipt" as const, badge: 0 },
@@ -1155,7 +1137,7 @@ export default function AdminPage() {
         <header className="mb-6 flex items-end justify-between gap-3 border-b border-[#49323F] pb-5">
           <div>
             <p className="text-[10px] font-semibold tracking-[0.34em] text-[#D7B77C]">BAR & MUSIC</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-[0.22em] text-[#F3EDEB]">myonga</h1>
+            <h1 className="mt-1 font-serif text-3xl font-medium tracking-[0.22em] text-[#F3EDEB]">myonga</h1>
             <p className="mt-1 text-xs tracking-wide text-[#A18F96]">STAFF CONSOLE</p>
           </div>
           <button
@@ -1199,7 +1181,7 @@ export default function AdminPage() {
             <div className="mb-5 flex items-end justify-between gap-3">
               <div>
                 <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">ORDER MANAGEMENT</p>
-                <h2 className="mt-1 text-2xl font-semibold">注文管理</h2>
+                <h2 className="mt-1 font-serif text-2xl font-medium">注文管理</h2>
               </div>
               <span className="text-xs text-[#A18F96]">未提供 {unservedOrders.length}件</span>
             </div>
@@ -1211,17 +1193,20 @@ export default function AdminPage() {
             )}
             <div className="space-y-4">
               {visibleCustomerGroups.map((group) => {
-                const groupUnserved = group.orders.filter((order) => order.status !== "served").length;
-                const groupItemCount = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+                const groupUnserved = group.orders.reduce((count, order) => count + order.items.reduce((sum, item) => sum + Math.max(0, item.quantity - item.served_quantity - item.cancelled_quantity), 0), 0);
+                const groupItemCount = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity - item.cancelled_quantity, 0), 0);
                 return (
                   <section key={group.customer_id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-3">
                     <div className="mb-2 flex items-center justify-between gap-3 px-1">
                       <div>
-                        <h3 className="text-base font-semibold text-[#F3EDEB]">{group.nickname} 様</h3>
+                        <h3 className="font-serif text-base font-medium text-[#F3EDEB]">{group.nickname} 様</h3>
                         <p className="text-[10px] text-[#8F8288]">ID：{group.customer_id.slice(0, 8)}</p>
                         <p className="mt-0.5 text-xs text-[#A18F96]">{group.orders.length}件の注文 ・ 商品 {groupItemCount}点</p>
                       </div>
-                      {groupUnserved > 0 && <span className="shrink-0 text-xs font-semibold text-[#E0525B]">● 未提供 {groupUnserved}件</span>}
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        {groupUnserved > 0 && <span className="text-xs font-semibold text-[#E0525B]">● 未提供 {groupUnserved}点</span>}
+                        <button type="button" onClick={() => serveAllCustomerItems(group.customer_id, group.nickname)} disabled={group.orders.every((order) => order.items.every((item) => item.served_quantity + item.cancelled_quantity >= item.quantity))} className="rounded-md border border-[#A9785D]/60 bg-[#382832] px-3 py-2 text-[11px] font-semibold text-[#F3D9AE] transition hover:bg-[#49323F] disabled:cursor-not-allowed disabled:opacity-40">全品提供済みにする</button>
+                      </div>
                     </div>
                     <div className="space-y-3">
                       {group.orders.map(renderOrder)}
@@ -1238,14 +1223,14 @@ export default function AdminPage() {
           <section>
             <div className="mb-5">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">GUESTS</p>
-              <h2 className="mt-1 text-2xl font-semibold">お客様一覧</h2>
+              <h2 className="mt-1 font-serif text-2xl font-medium">お客様一覧</h2>
               <p className="mt-2 text-sm text-[#A18F96]">お客様を選択すると、注文・提供状況・会計金額を確認できます。</p>
             </div>
             <div className="space-y-3">
               {activeCustomers.map((customer) => {
                 const selected = selectedCustomerId === customer.customer_id;
-                const customerTotal = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * item.quantity, 0), 0);
-                const totalQuantity = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+                const customerTotal = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * (item.quantity - item.cancelled_quantity), 0), 0);
+                const totalQuantity = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity - item.cancelled_quantity, 0), 0);
                 const servedQuantity = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.served_quantity, 0), 0);
                 const hasCheckoutRequest = customer.orders.some((order) => order.checkout_status === "requested");
                 return (
@@ -1256,15 +1241,13 @@ export default function AdminPage() {
                         <span className="mt-0.5 block text-[10px] text-[#8F8288]">ID：{customer.customer_id.slice(0, 8)}</span>
                         <span className="mt-1 block text-xs text-[#A18F96]">{selected ? "詳細を閉じる −" : "詳細を見る ＋"}</span>
                       </button>
-                      <button type="button" onClick={() => serveAllCustomerItems(customer.customer_id, customer.nickname)} disabled={servedQuantity >= totalQuantity} className="shrink-0 rounded-md border border-[#A9785D]/60 bg-[#382832] px-3 py-2.5 text-[11px] font-semibold leading-snug text-[#F3D9AE] transition hover:bg-[#49323F] disabled:cursor-not-allowed disabled:border-[#49323F] disabled:bg-[#261D23] disabled:text-[#8F8288] sm:px-3 sm:text-xs">
-                        {servedQuantity >= totalQuantity ? "全て提供済み" : "全品提供済みにする"}
-                      </button>
+
                     </div>
                     {selected && (
                       <div className="border-t border-[#49323F] p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <h3 className="text-lg font-semibold text-[#F3EDEB]">{customer.nickname} 様</h3>
+                            <h3 className="font-serif text-lg font-medium text-[#F3EDEB]">{customer.nickname} 様</h3>
                             <p className="mt-0.5 text-[10px] text-[#8F8288]">GUEST ID：{customer.customer_id.slice(0, 8)}</p>
                           </div>
                           <span className={`text-xs font-semibold ${servedQuantity >= totalQuantity ? "text-[#D8B58A]" : "text-[#E0525B]"}`}>提供済み {servedQuantity} / {totalQuantity}</span>
@@ -1297,21 +1280,34 @@ export default function AdminPage() {
         {activeTab === "checkout" && (
           <section>
             <div className="mb-5 flex items-end justify-between gap-3">
-              <div><p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">CHECKOUT</p><h2 className="mt-1 text-2xl font-semibold">お会計</h2></div>
+              <div><p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">CHECKOUT</p><h2 className="mt-1 font-serif text-2xl font-medium">お会計</h2></div>
               <span className="text-xs text-[#A18F96]">依頼中 {orders.filter((order) => order.checkout_status === "requested").length}件</span>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               {groupOrdersByCustomer(orders.filter((order) => order.checkout_status === "requested")).map((group) => {
-                const total = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * item.quantity, 0), 0);
-                const unserved = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity), 0), 0);
-                const payment = group.orders.find((order) => order.payment_method)?.payment_method;
-                return <section key={group.customer_id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold text-[#F3EDEB]">{group.nickname} 様</h3><p className="text-[10px] text-[#8F8288]">GUEST ID：{group.customer_id.slice(0, 8)}</p></div><span className="text-sm font-bold text-[#E0525B]">● お会計依頼中</span></div>
-                  <div className="mt-3 space-y-3">{group.orders.map(renderOrder)}</div>
-                  <div className="mt-4 flex items-center justify-between border-t border-[#49323F] pt-3"><span className="text-sm text-[#C5B7BA]">合計</span><strong className="text-xl">¥{total.toLocaleString("ja-JP")}</strong></div>
-                  <p className="mt-2 text-sm text-[#C5B7BA]">支払い方法：{payment === "cash" ? "現金" : payment === "paypay" ? "PayPay" : "未選択（スタッフが選択）"}</p>
-                  <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => cancelCustomerCheckout(group.customer_id, group.nickname)} className="rounded-md border border-[#C83D4D]/60 bg-[#382832] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計を取り消す</button><button type="button" onClick={() => completeCustomerCheckout(group.customer_id, group.nickname)} className="rounded-md bg-[#71364F] px-3 py-3 text-sm font-semibold text-[#FFF9F5]">会計を完了する</button></div>
-                  {unserved > 0 && <p className="mt-2 text-xs font-semibold text-[#E0525B]">未提供商品が {unserved} 点あります</p>}
+                const total = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * (item.quantity - item.cancelled_quantity), 0), 0);
+                const requestTimes = group.orders.map((order) => order.checkout_requested_at).filter(Boolean) as string[];
+                const requestTime = requestTimes.length > 0 ? requestTimes.sort()[0] : null;
+                const expanded = expandedCheckoutCustomerId === group.customer_id;
+                return <section key={group.customer_id} className="overflow-hidden rounded-md border border-[#49323F] bg-[#1B151A]">
+                  <button type="button" onClick={() => setExpandedCheckoutCustomerId(expanded ? null : group.customer_id)} className="flex w-full items-center justify-between gap-3 p-4 text-left transition hover:bg-[#261D23]">
+                    <span className="min-w-0">
+                      <span className="block font-serif font-medium text-[#F3EDEB]">{group.nickname} 様</span>
+                      <span className="mt-0.5 block text-[10px] text-[#8F8288]">ID：{group.customer_id.slice(0, 8)}</span>
+                      <span className="mt-2 block text-xs text-[#A18F96]">依頼時間：{requestTime ? new Date(requestTime).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "不明（旧データ）"}</span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-xl font-semibold text-[#F3EDEB]">¥{total.toLocaleString("ja-JP")}</span>
+                      <span className="mt-1 block text-xs text-[#A18F96]">{expanded ? "詳細を閉じる −" : "詳細を見る ＋"}</span>
+                    </span>
+                  </button>
+                  {expanded && <div className="border-t border-[#49323F] p-4">
+                    <div className="space-y-3">{group.orders.map(renderOrder)}</div>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => cancelCustomerCheckout(group.customer_id, group.nickname)} className="rounded-md border border-[#C83D4D]/60 bg-[#382832] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計を取り消す</button>
+                      <button type="button" onClick={() => completeCustomerCheckout(group.customer_id, group.nickname)} className="rounded-md bg-[#71364F] px-3 py-3 text-sm font-semibold text-[#FFF9F5]">会計を完了する</button>
+                    </div>
+                  </div>}
                 </section>;
               })}
               {orders.every((order) => order.checkout_status !== "requested") && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">現在、お会計依頼はありません。</p>}
@@ -1324,7 +1320,7 @@ export default function AdminPage() {
             <div className="mb-5 flex items-end justify-between">
               <div>
                 <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">GUEST ASSISTANCE</p>
-                <h2 className="mt-1 text-2xl font-semibold">スタッフ呼び出し</h2>
+                <h2 className="mt-1 font-serif text-2xl font-medium">スタッフ呼び出し</h2>
               </div>
               <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-sm font-semibold text-[#D7B77C]">未対応 {staffCalls.length}件</span>
             </div>
@@ -1352,7 +1348,7 @@ export default function AdminPage() {
             <div className="mb-5 flex items-end justify-between gap-3">
               <div>
                 <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">MENU CONTROL</p>
-                <h2 className="mt-1 text-2xl font-semibold">商品管理</h2>
+                <h2 className="mt-1 font-serif text-2xl font-medium">商品管理</h2>
               </div>
               <span className="text-xs text-[#C5B7BA]">販売中 {products.filter((product) => product.is_available).length} / {products.length}</span>
             </div>
@@ -1381,12 +1377,12 @@ export default function AdminPage() {
           <section>
             <div className="mb-5">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">PAYMENT HISTORY</p>
-              <h2 className="mt-1 text-2xl font-semibold">会計履歴</h2>
+              <h2 className="mt-1 font-serif text-2xl font-medium">会計履歴</h2>
             </div>
             <div className="space-y-4">
               {historyCustomerGroups.map((group) => (
                 <section key={group.customer_id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-3">
-                  <div className="mb-3 flex items-center justify-between gap-3 px-1"><div><h3 className="text-base font-semibold text-[#F3EDEB]">{group.nickname} 様</h3><p className="text-[10px] text-[#8F8288]">GUEST ID：{group.customer_id.slice(0, 8)}</p></div><button type="button" onClick={() => resetCustomerTerminal(group.customer_id, group.nickname)} className="shrink-0 rounded-md border border-[#71364F] bg-[#382832] px-3 py-2 text-xs font-semibold text-[#F3D9AE]"><span className="inline-flex items-center gap-1.5"><AdminIcon name="refresh-ccw" size={14} />端末をリセット</span></button></div>
+                  <div className="mb-3 flex items-center justify-between gap-3 px-1"><div><h3 className="font-serif text-base font-medium text-[#F3EDEB]">{group.nickname} 様</h3><p className="text-[10px] text-[#8F8288]">GUEST ID：{group.customer_id.slice(0, 8)}</p></div><button type="button" onClick={() => resetCustomerTerminal(group.customer_id, group.nickname)} className="shrink-0 rounded-md border border-[#71364F] bg-[#382832] px-3 py-2 text-xs font-semibold text-[#F3D9AE]"><span className="inline-flex items-center gap-1.5"><AdminIcon name="refresh-ccw" size={14} />端末をリセット</span></button></div>
                   <div className="space-y-3">{group.orders.map(renderOrder)}</div>
                 </section>
               ))}

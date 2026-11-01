@@ -22,12 +22,14 @@ type CustomerOrder = {
   checkout_status: string | null;
   payment_method: string | null;
   created_at: string;
+  checkout_requested_at: string | null;
   items: {
     productName: string;
     option: string | null;
     price: number;
     quantity: number;
     served_quantity: number;
+    cancelled_quantity: number;
     status: string;
   }[];
 };
@@ -56,6 +58,14 @@ const CATEGORY_PRICES: Record<string, number> = {
 };
 
 const getMenuPresentation = (name: string) => MENU_PRESENTATION[name];
+
+type CustomerIconName = "shopping-bag" | "clipboard-list" | "history";
+function CustomerIcon({ name }: { name: CustomerIconName }) {
+  const common = { width: 17, height: 17, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const };
+  if (name === "shopping-bag") return <svg {...common}><path d="M5 8h14l1 13H4L5 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>;
+  if (name === "clipboard-list") return <svg {...common}><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5h6M9 9h6M9 13h6M9 17h3"/><path d="M9 2.8h6v3H9z"/></svg>;
+  return <svg {...common}><path d="M4 5h16v16H4z"/><path d="M8 3v4M16 3v4M4 10h16M8 14h3M8 17h7"/></svg>;
+}
 
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -89,7 +99,7 @@ export default function Home() {
     const loadOrderHistory = async () => {
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("id, status, checkout_status, payment_method, created_at")
+        .select("id, status, checkout_status, payment_method, created_at, checkout_requested_at")
         .eq("customer_id", customerId)
         .order("created_at", { ascending: true });
 
@@ -120,6 +130,7 @@ export default function Home() {
               checkout_status: order.checkout_status,
               payment_method: order.payment_method,
               created_at: order.created_at,
+              checkout_requested_at: order.checkout_requested_at,
               items: [],
             }))
         );
@@ -130,7 +141,7 @@ export default function Home() {
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
         .select(
-          "order_id, product_id, quantity, served_quantity, status, option"
+          "order_id, product_id, quantity, served_quantity, cancelled_quantity, status, option"
         )
         .in("order_id", orderIds);
 
@@ -146,6 +157,7 @@ export default function Home() {
           checkout_status: order.checkout_status,
           payment_method: order.payment_method,
           created_at: order.created_at,
+          checkout_requested_at: order.checkout_requested_at,
           items: [],
         }));
         setOrderHistory(emptyItemHistory);
@@ -179,6 +191,7 @@ export default function Home() {
             );
 
             const servedQuantity = item.served_quantity ?? 0;
+            const cancelledQuantity = item.cancelled_quantity ?? 0;
 
             return {
               productName: product?.name ?? "不明な商品",
@@ -186,17 +199,15 @@ export default function Home() {
               price: product?.price ?? 0,
               quantity: item.quantity,
               served_quantity: servedQuantity,
-              status:
-                servedQuantity >= item.quantity
-                  ? "served"
-                  : "pending",
+              cancelled_quantity: cancelledQuantity,
+              status: cancelledQuantity > 0 ? "cancelled" : servedQuantity >= item.quantity ? "served" : "pending",
             };
           });
 
         const allItemsServed =
           orderItems.length > 0 &&
           orderItems.every(
-            (item) => item.served_quantity >= item.quantity
+            (item) => item.served_quantity + item.cancelled_quantity >= item.quantity
           );
 
         return {
@@ -205,6 +216,7 @@ export default function Home() {
           checkout_status: order.checkout_status,
           payment_method: order.payment_method,
           created_at: order.created_at,
+          checkout_requested_at: order.checkout_requested_at,
           items: orderItems,
         };
       });
@@ -509,21 +521,21 @@ export default function Home() {
     (order) =>
       (order.checkout_status === "none" || order.checkout_status === null) &&
       order.items.some(
-        (item) => item.served_quantity < item.quantity
+        (item) => item.cancelled_quantity < item.quantity && item.served_quantity + item.cancelled_quantity < item.quantity
       )
   );
 
   // 提供済みの注文
   const servedOrders = orderHistory.filter((order) =>
-    order.items.length > 0 &&
-    order.items.every(
-      (item) => item.served_quantity >= item.quantity
+    order.items.length > 0 && (
+      order.items.some((item) => item.cancelled_quantity > 0) ||
+      order.items.every((item) => item.served_quantity + item.cancelled_quantity >= item.quantity)
     )
   );
 
   // 会計対象の注文
   const checkoutOrders = orderHistory.filter(
-    (order) => order.checkout_status === "none" || order.checkout_status === null
+    (order) => (order.checkout_status === "none" || order.checkout_status === null) && order.items.some((item) => item.cancelled_quantity < item.quantity)
   );
 
   // 会計対象の合計
@@ -532,7 +544,7 @@ export default function Home() {
       sum +
       (order.items ?? []).reduce(
         (orderSum, item) =>
-          orderSum + item.price * item.quantity,
+          orderSum + item.price * (item.quantity - item.cancelled_quantity),
         0
       ),
     0
@@ -544,7 +556,7 @@ export default function Home() {
       sum +
       (order.items ?? []).reduce(
         (orderSum, item) =>
-          orderSum + item.price * item.quantity,
+          orderSum + item.price * (item.quantity - item.cancelled_quantity),
         0
       ),
     0
@@ -578,10 +590,11 @@ export default function Home() {
       .from("orders")
       .update({
         checkout_status: "requested",
+        checkout_requested_at: new Date().toISOString(),
         payment_method: paymentMethod,
       })
       .eq("customer_id", customerId)
-      .or("checkout_status.eq.none,checkout_status.is.null");
+      .in("id", checkoutOrders.map((order) => order.id));
 
     if (error) {
       console.error(error);
@@ -728,7 +741,7 @@ export default function Home() {
     return (
       <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
         <div className="w-full max-w-md rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
-          <h1 className="text-2xl font-black text-[#F3EDEB]">
+          <h1 className="font-serif text-2xl font-medium text-[#F3EDEB]">
             myonga
           </h1>
 
@@ -763,12 +776,13 @@ export default function Home() {
     return (
       <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
         <div className="w-full max-w-md rounded-md bg-[#1B151A] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
-          <h1 className="text-2xl font-semibold text-[#F3EDEB]">
+          <h1 className="font-serif text-2xl font-medium text-[#F3EDEB]">
             ご注文を受け付けました
           </h1>
 
           <p className="mt-3 text-[#C5B7BA]">
-            {nickname}様、ご注文ありがとうございます。
+            <span className="block">{nickname}様、ご注文ありがとうございます。</span>
+            <span className="mt-1 block text-[10px] tracking-wide text-[#8F8288]">GUEST ID：{customerId?.slice(0, 8)}</span>
           </p>
 
           <div className="mt-5 rounded-md border border-[#49323F] bg-[#261D23] p-4 text-left">
@@ -808,7 +822,7 @@ export default function Home() {
       <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#100D10] p-6">
         <div className="mx-auto w-full max-w-md">
           <div className="rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
-            <h1 className="text-2xl font-black text-[#F3EDEB]">
+            <h1 className="font-serif text-2xl font-medium text-[#F3EDEB]">
               お会計
             </h1>
 
@@ -839,7 +853,7 @@ export default function Home() {
             </div>
 
             <div className="mt-6">
-              <h2 className="text-lg font-bold text-[#F3EDEB]">
+              <h2 className="font-serif text-lg font-medium text-[#F3EDEB]">
                 ご注文履歴
               </h2>
 
@@ -852,7 +866,7 @@ export default function Home() {
                   const currentOrderTotal =
                     (order.items ?? []).reduce(
                       (sum, item) =>
-                        sum + item.price * item.quantity,
+                        sum + item.price * (item.quantity - item.cancelled_quantity),
                       0
                     );
 
@@ -887,10 +901,11 @@ export default function Home() {
                             <span>
                               {getMenuPresentation(item.productName)?.english ?? item.productName}{item.option ? ` · ${item.option.toUpperCase()}` : ""} ×{" "}
                               {item.quantity}
+                              {item.cancelled_quantity > 0 ? `（キャンセル ${item.cancelled_quantity}）` : ""}
                             </span>
 
                             <span>
-                              ¥{(item.price * item.quantity).toLocaleString("en-US")}
+                              ¥{(item.price * (item.quantity - item.cancelled_quantity)).toLocaleString("en-US")}
                             </span>
                           </div>
                         ))}
@@ -920,11 +935,12 @@ export default function Home() {
   return (
     <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#100D10] p-6 pb-28">
       <div className="mx-auto w-full max-w-md">
-        <h1 className="text-3xl font-semibold tracking-[0.22em] text-[#F3EDEB]">
+        <h1 className="font-serif text-3xl font-medium tracking-[0.22em] text-[#F3EDEB]">
           myonga
         </h1>
 
         <p className="mt-2 text-sm tracking-wide text-[#C5B7BA]">{nickname} 様</p>
+        <p className="mt-0.5 text-[10px] tracking-wide text-[#8F8288]">GUEST ID：{customerId?.slice(0, 8)}</p>
 
         <button
           onClick={callStaff}
@@ -952,10 +968,10 @@ export default function Home() {
         {/* メインタブ */}
         <nav className="mt-7 grid grid-cols-3 gap-2 rounded-md border border-[#49323F] bg-[#1B151A] p-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
           {([
-            ["menu", "メニュー"],
-            ["orders", "注文状況"],
-            ["history", "注文履歴"],
-          ] as const).map(([tab, label]) => (
+            ["menu", "メニュー", "shopping-bag"],
+            ["orders", "注文状況", "clipboard-list"],
+            ["history", "注文履歴", "history"],
+          ] as const).map(([tab, label, iconName]) => (
             <button
               key={tab}
               onClick={() => setCustomerTab(tab)}
@@ -965,7 +981,7 @@ export default function Home() {
                   : "text-[#C5B7BA] hover:bg-[#382832]"
               }`}
             >
-              {label}
+              <span className="inline-flex items-center justify-center gap-1.5"><CustomerIcon name={iconName} />{label}</span>
               {tab === "orders" && currentOrders.length > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#1B151A] bg-[#C83D4D] px-1 text-[10px] font-black text-white">
                   {currentOrders.length > 99 ? "99+" : currentOrders.length}
@@ -980,7 +996,7 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4 flex items-end justify-between">
               <div>
-                <h2 className="font-sans text-2xl font-semibold tracking-wide text-[#F3EDEB]">Menu</h2>
+                <h2 className="font-serif text-2xl font-medium tracking-wide text-[#F3EDEB]">Menu</h2>
               </div>
               <span className="text-xs text-[#A18F96]">{categoryItemCount} items</span>
             </div>
@@ -1015,7 +1031,7 @@ export default function Home() {
                       return (
                         <section key={category} className="space-y-3">
                           <div className="flex items-baseline justify-between border-b border-[#49323F] pb-3 pt-2">
-                            <span className="font-sans text-lg font-medium tracking-normal text-[#F3EDEB]">{category}</span>
+                            <span className="font-serif text-lg font-medium tracking-normal text-[#F3EDEB]">{category}</span>
                             <span className="text-sm tracking-wide text-[#D7B77C]">¥{CATEGORY_PRICES[category].toLocaleString("en-US")}</span>
                           </div>
                           {categoryProducts.map((product) => {
@@ -1065,7 +1081,7 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">YOUR ORDERS</p>
-              <h2 className="mt-1 font-sans text-2xl font-semibold tracking-wide text-[#F3EDEB]">Your Orders</h2>
+              <h2 className="mt-1 font-serif text-2xl font-medium tracking-wide text-[#F3EDEB]">Your Orders</h2>
             </div>
             {currentOrders.length === 0 ? (
               <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center">
@@ -1075,8 +1091,9 @@ export default function Home() {
               <div className="space-y-4">
                 {currentOrders.map((order) => {
                   const orderDate = formatOrderDate(order.created_at);
-                  const currentOrderTotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-                  const allItemsServed = order.items.length > 0 && order.items.every((item) => item.served_quantity >= item.quantity);
+                  const currentOrderTotal = order.items.reduce((sum, item) => sum + item.price * (item.quantity - item.cancelled_quantity), 0);
+                  const activeItems = order.items.filter((item) => item.served_quantity + item.cancelled_quantity < item.quantity);
+                  const allItemsServed = activeItems.length === 0;
                   const someItemsServed = order.items.some((item) => item.served_quantity > 0);
                   return (
                     <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
@@ -1095,16 +1112,16 @@ export default function Home() {
                       <div className="mt-4 space-y-3 border-t border-[#49323F] pt-4">
                         {order.items.map((item, index) => {
                           const served = item.served_quantity;
-                          const fullyServed = served >= item.quantity;
-                          const partiallyServed = served > 0 && served < item.quantity;
+                          const fullyServed = served + item.cancelled_quantity >= item.quantity;
+                          const partiallyServed = served > 0 && served + item.cancelled_quantity < item.quantity;
                           return (
                             <div key={index} className="flex items-center justify-between gap-3 text-sm">
-                              <span className={fullyServed ? "text-[#D7B77C]" : "text-[#F3EDEB]"}>
+                              <span className={item.cancelled_quantity > 0 ? "text-[#A18F96]" : fullyServed ? "text-[#D7B77C]" : "text-[#F3EDEB]"}>
                                 {getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}
                                 {item.option && <span className="ml-2 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
                               </span>
                               <span className="shrink-0 text-right text-xs font-semibold text-[#C5B7BA]">
-                                {fullyServed ? "提供済み" : partiallyServed ? `${served} / ${item.quantity} 提供済み` : `0 / ${item.quantity} 提供待ち`}
+                                {item.cancelled_quantity >= item.quantity ? "キャンセル済み" : item.cancelled_quantity > 0 ? `${item.cancelled_quantity}点キャンセル・${served}点提供済み` : fullyServed ? "提供済み" : partiallyServed ? `${served} / ${item.quantity} 提供済み` : `0 / ${item.quantity} 提供待ち`}
                               </span>
                             </div>
                           );
@@ -1126,7 +1143,7 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">ORDER HISTORY</p>
-              <h2 className="mt-1 font-sans text-2xl font-semibold tracking-wide text-[#F3EDEB]">Order History</h2>
+              <h2 className="mt-1 font-serif text-2xl font-medium tracking-wide text-[#F3EDEB]">Order History</h2>
             </div>
             {servedOrders.length === 0 ? (
               <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center text-sm text-[#A18F96]">提供済みのご注文はまだありません。</div>
@@ -1134,7 +1151,7 @@ export default function Home() {
               <div className="space-y-4">
                 {[...servedOrders].reverse().map((order) => {
                   const orderDate = formatOrderDate(order.created_at);
-                  const currentOrderTotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+                  const currentOrderTotal = order.items.reduce((sum, item) => sum + item.price * (item.quantity - item.cancelled_quantity), 0);
                   return (
                     <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
@@ -1145,13 +1162,17 @@ export default function Home() {
                           </div>
                           <p className="mt-1 text-xs text-[#A18F96]">注文番号 #{order.id}</p>
                         </div>
-                        <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-xs font-bold text-[#D7B77C]">提供済み</span>
+                        <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-xs font-bold text-[#D7B77C]">{order.items.every((item) => item.cancelled_quantity >= item.quantity) ? "キャンセル済み" : order.items.some((item) => item.cancelled_quantity > 0) ? "キャンセル商品あり" : "提供済み"}</span>
                       </div>
                       <div className="mt-4 space-y-2 border-t border-[#49323F] pt-4">
                         {order.items.map((item, index) => (
                           <div key={index} className="flex items-center justify-between gap-3 text-sm text-[#F3EDEB]">
-                            <span>{getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}{item.option && <span className="ml-2 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}</span>
-                            <span className="text-[#C5B7BA]">¥{(item.price * item.quantity).toLocaleString("en-US")}</span>
+                            <span className={item.cancelled_quantity > 0 ? "text-[#A18F96] line-through" : ""}>{getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}{item.option && <span className="ml-2 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
+                              {item.cancelled_quantity > 0 && <span className="ml-2 text-xs font-semibold text-[#F08A91] no-underline">{item.cancelled_quantity >= item.quantity ? "キャンセル済み" : `一部キャンセル（${item.cancelled_quantity}点）`}</span>}</span>
+                            <span className="shrink-0 text-right text-xs text-[#C5B7BA]">
+                              ¥{(item.price * (item.quantity - item.cancelled_quantity)).toLocaleString("en-US")}
+                              <span className="block text-[10px] text-[#A18F96]">{item.cancelled_quantity >= item.quantity ? "キャンセル済み" : item.cancelled_quantity > 0 ? `一部キャンセル ${item.cancelled_quantity}点` : item.served_quantity >= item.quantity ? "提供済み" : "提供待ち"}</span>
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -1240,7 +1261,7 @@ export default function Home() {
         <div className="fixed inset-0 z-50 bg-[#0A080B]/70">
           <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-md rounded-t-2xl bg-[#1B151A] p-5 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h2 className="font-sans text-xl font-semibold text-[#F3EDEB]">
+              <h2 className="font-serif text-xl font-medium text-[#F3EDEB]">
                 カート
               </h2>
 
