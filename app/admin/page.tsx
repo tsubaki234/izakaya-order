@@ -59,12 +59,49 @@ const MENU_PRESENTATION: Record<string, { english: string; reading: string; cate
 
 const getMenuPresentation = (name: string) => MENU_PRESENTATION[name];
 
+type AdminIconName = "clipboard-list" | "users" | "wallet" | "package" | "receipt" | "phone" | "volume-2" | "refresh-ccw";
+
+function AdminIcon({ name, size = 18 }: { name: AdminIconName; size?: number }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.7,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+    className: "shrink-0",
+  };
+
+  switch (name) {
+    case "clipboard-list":
+      return <svg {...common}><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4.5h6M9 9h6M9 13h6M9 17h3" /><path d="M9 2.8h6v3H9z" /></svg>;
+    case "users":
+      return <svg {...common}><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="10" cy="7" r="4" /><path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
+    case "wallet":
+      return <svg {...common}><rect x="3" y="5" width="18" height="15" rx="2" /><path d="M3 9h18M16 14h2" /><path d="M6 5V3h12v2" /></svg>;
+    case "package":
+      return <svg {...common}><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="M3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5" /></svg>;
+    case "receipt":
+      return <svg {...common}><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Z" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>;
+    case "phone":
+      return <svg {...common}><path d="M5 4h4l2 5-2.5 1.8a15 15 0 0 0 4.7 4.7L15 13l5 2v4a2 2 0 0 1-2 2C9 21 3 15 3 6a2 2 0 0 1 2-2Z" /></svg>;
+    case "volume-2":
+      return <svg {...common}><path d="M4 10v4h4l5 4V6l-5 4H4Z" /><path d="M17 9a5 5 0 0 1 0 6M19.5 6.5a9 9 0 0 1 0 11" /></svg>;
+    case "refresh-ccw":
+      return <svg {...common}><path d="M3 11a9 9 0 0 1 15.4-6.4L21 7" /><path d="M21 3v4h-4M21 13a9 9 0 0 1-15.4 6.4L3 17" /><path d="M3 21v-4h4" /></svg>;
+  }
+}
+
 export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [historyOrders, setHistoryOrders] = useState<Order[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const [activeTab, setActiveTab] = useState<"orders" | "customers" | "calls" | "products" | "history">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "checkout" | "customers" | "calls" | "products" | "history">("orders");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [checkoutPaymentCustomerId, setCheckoutPaymentCustomerId] = useState<string | null>(null);
   const [staffCalls, setStaffCalls] = useState<StaffCall[]>([]);
   const [updatingCallIds, setUpdatingCallIds] = useState<number[]>([]);
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(false);
@@ -628,114 +665,109 @@ export default function AdminPage() {
       .eq("id", orderId);
   };
 
-  // 注文の商品を全部提供済みにする
-  const serveAllItems = async (orderId: number) => {
-    const targetOrder = orders.find(
-      (order) => order.id === orderId
-    );
-
-    if (!targetOrder) return;
-
-    for (const item of targetOrder.items) {
-      const { error: itemError } = await supabase
-        .from("order_items")
-        .update({
-          served_quantity: item.quantity,
-          status: "served",
-        })
-        .eq("id", item.id);
-
-      if (itemError) {
-        console.error(itemError);
-        alert("一括提供済みへの変更に失敗しました");
-        return;
-      }
-    }
-
-    const { error: orderError } = await supabase
-      .from("orders")
-      .update({
-        status: "served",
-      })
-      .eq("id", orderId);
-
-    if (orderError) {
-      console.error(orderError);
-      alert("注文状態の変更に失敗しました");
-      return;
-    }
-
-    setOrders((currentOrders) =>
-      currentOrders
-        .map((order) =>
-          order.id === orderId
-            ? {
-                ...order,
-                status: "served",
-                items: order.items.map((item) => ({
-                  ...item,
-                  served_quantity: item.quantity,
-                  status: "served",
-                })),
-              }
-            : order
-        )
-        .sort((a, b) => {
-          const aServed = a.status === "served";
-          const bServed = b.status === "served";
-
-          if (aServed !== bServed) {
-            return aServed ? 1 : -1;
-          }
-
-          return (
-            new Date(a.created_at).getTime() -
-            new Date(b.created_at).getTime()
-          );
-        })
-    );
-  };
-
-  // 会計を完了する
-  const completeCheckout = async (order: Order) => {
-    const total = (order.items ?? []).reduce(
-      (sum, item) =>
-        sum + item.price * item.quantity,
+  // お客様単位で未提供商品を一括提供済みにする（DB側RPCで一括処理）
+  const serveAllCustomerItems = async (customerId: string, nickname: string) => {
+    const customerOrders = orders.filter((order) => order.customer_id === customerId);
+    const unservedCount = customerOrders.reduce(
+      (sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity), 0),
       0
     );
-
-    const confirmed = window.confirm(
-      `${order.nickname}様の会計を完了しますか？\n\n合計 ¥${total}`
-    );
-
-    if (!confirmed) return;
-
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        checkout_status: "paid",
-      })
-      .eq("customer_id", order.customer_id)
-      .eq("checkout_status", "requested");
-
-    if (error) {
-      console.error(error);
-      alert("会計済みへの変更に失敗しました");
+    if (unservedCount === 0) {
+      alert("未提供の商品はありません。");
       return;
     }
-
-
-    setOrders((currentOrders) =>
-      currentOrders.filter(
-        (currentOrder) =>
-          !(
-            currentOrder.customer_id ===
-              order.customer_id &&
-            currentOrder.checkout_status ===
-              "requested"
-          )
-      )
+    const confirmed = window.confirm(
+      `${nickname}様の未提供商品をすべて提供済みにしますか？\n\n未提供品はございませんか？\n\n対象：${unservedCount}点`
     );
+    if (!confirmed) return;
+
+    const { error } = await supabase.rpc("mark_customer_items_served", {
+      p_customer_id: customerId,
+    });
+    if (error) {
+      console.error("お客様単位の一括提供エラー:", error);
+      alert("一括提供済みへの変更に失敗しました。SQLの追加と権限を確認してください。");
+      return;
+    }
+    setOrders((current) => current.map((order) => order.customer_id !== customerId ? order : ({
+      ...order,
+      status: "served",
+      items: order.items.map((item) => ({ ...item, served_quantity: item.quantity, status: "served" })),
+    })));
+  };
+
+  // スタッフ側から会計を開始する
+  const startCustomerCheckout = async (customerId: string, nickname: string) => {
+    const customerOrders = orders.filter((order) => order.customer_id === customerId && (order.checkout_status === "none" || order.checkout_status === null));
+    if (customerOrders.length === 0) {
+      alert("会計対象の注文がありません。");
+      return;
+    }
+    const ids = customerOrders.map((order) => order.id);
+    const { data, error } = await supabase
+      .from("orders")
+      .update({ checkout_status: "requested", payment_method: null })
+      .in("id", ids)
+      .select("id");
+    if (error || !data || data.length !== ids.length) {
+      console.error("スタッフ会計開始エラー:", error);
+      alert("会計を開始できませんでした。注文状態を再確認してください。");
+      return;
+    }
+    setOrders((current) => current.map((order) => ids.includes(order.id) ? { ...order, checkout_status: "requested", payment_method: null } : order));
+    setActiveTab("checkout");
+  };
+
+  // スタッフが会計依頼を取り消す。支払い方法も必ずリセットする。
+  const cancelCustomerCheckout = async (customerId: string, nickname: string) => {
+    const confirmed = window.confirm(`${nickname}様のお会計依頼を取り消しますか？\n\nお客様の画面は注文画面に戻り、支払い方法を選び直せるようになります。`);
+    if (!confirmed) return;
+    const { data, error } = await supabase
+      .from("orders")
+      .update({ checkout_status: "none", payment_method: null })
+      .eq("customer_id", customerId)
+      .eq("checkout_status", "requested")
+      .select("id");
+    if (error || !data || data.length === 0) {
+      console.error("会計依頼取消エラー:", error);
+      alert("会計依頼を取り消せませんでした。");
+      return;
+    }
+    const ids = data.map((row) => row.id);
+    setOrders((current) => current.map((order) => ids.includes(order.id) ? { ...order, checkout_status: "none", payment_method: null } : order));
+  };
+
+  const finalizeCustomerCheckout = async (customerId: string, paymentMethod: "cash" | "paypay") => {
+    const { data, error } = await supabase
+      .from("orders")
+      .update({ checkout_status: "paid", payment_method: paymentMethod })
+      .eq("customer_id", customerId)
+      .eq("checkout_status", "requested")
+      .select("id");
+    if (error || !data || data.length === 0) {
+      console.error("会計完了エラー:", error);
+      alert("会計済みに変更できませんでした。状態を再確認してください。");
+      return;
+    }
+    const paidIds = data.map((row) => row.id);
+    setOrders((current) => current.filter((order) => !paidIds.includes(order.id)));
+    setCheckoutPaymentCustomerId(null);
+  };
+
+  // 会計完了前に提供漏れを確認し、必要なら支払い方法をスタッフが選択
+  const completeCustomerCheckout = async (customerId: string, nickname: string) => {
+    const customerOrders = orders.filter((order) => order.customer_id === customerId && order.checkout_status === "requested");
+    if (customerOrders.length === 0) return;
+    const total = customerOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * item.quantity, 0), 0);
+    const unservedCount = customerOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity), 0), 0);
+    const confirmed = window.confirm(`${nickname}様のお会計を完了しますか？\n\n未提供品はございませんか？\n\n未提供：${unservedCount}点\n合計：¥${total.toLocaleString("ja-JP")}`);
+    if (!confirmed) return;
+    const methods = [...new Set(customerOrders.map((order) => order.payment_method).filter(Boolean))];
+    if (methods.length === 1) {
+      await finalizeCustomerCheckout(customerId, methods[0] as "cash" | "paypay");
+    } else {
+      setCheckoutPaymentCustomerId(customerId);
+    }
   };
 
   // お客様の端末をリセットする
@@ -855,6 +887,7 @@ export default function AdminPage() {
 
       if (existing) {
         existing.orderCount += 1;
+        existing.orders.push(order);
         existing.itemCount += order.items.reduce(
           (sum, item) => sum + item.quantity,
           0
@@ -864,6 +897,7 @@ export default function AdminPage() {
           customer_id: order.customer_id,
           nickname: order.nickname,
           orderCount: 1,
+          orders: [order],
           itemCount: order.items.reduce(
             (sum, item) => sum + item.quantity,
             0
@@ -877,6 +911,7 @@ export default function AdminPage() {
       nickname: string;
       orderCount: number;
       itemCount: number;
+      orders: Order[];
     }>())
   ).map(([, customer]) => customer);
 
@@ -926,15 +961,15 @@ export default function AdminPage() {
 
           <div className="text-right">
             {showHistory && (
-              <span className="text-sm font-bold text-[#D8B58A]">
-                🟢 会計済み
+              <span className="inline-flex items-center gap-2 text-sm font-bold text-[#D8B58A]">
+                <span className="h-2 w-2 rounded-full bg-[#D8B58A]" />会計済み
               </span>
             )}
 
             {!showHistory &&
               order.checkout_status === "requested" && (
-                <span className="text-sm font-bold text-[#D7B77C]">
-                  🟠 お会計依頼中
+                <span className="inline-flex items-center gap-2 text-sm font-bold text-[#E0525B]">
+                  <span className="h-2 w-2 rounded-full bg-[#E0525B]" />お会計依頼中
                 </span>
               )}
           </div>
@@ -959,7 +994,7 @@ export default function AdminPage() {
                           : "text-[#F3EDEB]"
                       }`}
                     >
-                      {isFullyServed && "🟢 "}
+                      {isFullyServed && <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[#D8B58A] align-middle" />}
                       {getMenuPresentation(item.name)?.english ?? item.name} × {item.quantity}
                     </p>
                     {item.option && (
@@ -1032,29 +1067,18 @@ export default function AdminPage() {
                   : "● 未提供"}
               </p>
 
-              {order.status !== "served" && (
-                <button
-                  onClick={() =>
-                    serveAllItems(order.id)
-                  }
-                  className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] transition hover:bg-[#87445F]"
-                >
-                  この注文を全部提供済みにする
-                </button>
-              )}
-
               <p
                 className={`mt-3 font-bold ${
                   order.checkout_status ===
                   "requested"
-                    ? "text-[#D7B77C]"
+                    ? "text-[#E0525B]"
                     : "text-[#C5B7BA]"
                 }`}
               >
                 お会計：
                 {order.checkout_status ===
                 "requested"
-                  ? "🟠 お会計依頼中"
+                  ? "お会計依頼中"
                   : order.checkout_status ===
                       "none"
                     ? "未会計"
@@ -1071,17 +1095,6 @@ export default function AdminPage() {
                 </p>
               )}
 
-              {order.checkout_status ===
-                "requested" && (
-                <button
-                  onClick={() =>
-                    completeCheckout(order)
-                  }
-                  className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] transition hover:bg-[#87445F]"
-                >
-                  会計済みにする
-                </button>
-              )}
               {order.checkout_status === "none" &&
                 order.items.every(
                   (item) => item.served_quantity === 0
@@ -1117,17 +1130,6 @@ export default function AdminPage() {
                 追加注文を受け付ける
               </button>
 
-              <button
-                onClick={() =>
-                  resetCustomerTerminal(
-                    order.customer_id,
-                    order.nickname
-                  )
-                }
-                className="mt-3 w-full rounded-md border border-[#71364F] bg-[#382832] px-4 py-3 font-bold text-[#F3D9AE] transition hover:bg-[#49323F]"
-              >
-                端末をリセット
-              </button>
             </>
           )}
         </div>
@@ -1139,11 +1141,12 @@ export default function AdminPage() {
   const soldOutCount = products.filter((product) => !product.is_available).length;
 
   const tabs = [
-    { id: "orders" as const, label: "注文", badge: orderBadgeCount },
-    { id: "customers" as const, label: "お客様", badge: activeCustomers.length },
-    { id: "calls" as const, label: "呼び出し", badge: staffCalls.length },
-    { id: "products" as const, label: "商品", badge: soldOutCount },
-    { id: "history" as const, label: "履歴", badge: 0 },
+    { id: "orders" as const, label: "注文", icon: "clipboard-list" as const, badge: orderBadgeCount },
+    { id: "checkout" as const, label: "お会計", icon: "wallet" as const, badge: orders.filter((order) => order.checkout_status === "requested").length },
+    { id: "customers" as const, label: "お客様", icon: "users" as const, badge: activeCustomers.length },
+    { id: "calls" as const, label: "呼び出し", icon: "phone" as const, badge: staffCalls.length },
+    { id: "products" as const, label: "商品", icon: "package" as const, badge: soldOutCount },
+    { id: "history" as const, label: "履歴", icon: "receipt" as const, badge: 0 },
   ];
 
   return (
@@ -1161,11 +1164,11 @@ export default function AdminPage() {
             aria-pressed={notificationSoundEnabled}
             className={`rounded-md border px-3 py-2 text-xs font-semibold transition ${notificationSoundEnabled ? "border-[#A9785D] bg-[#382832] text-[#F3D9AE]" : "border-[#49323F] bg-[#1B151A] text-[#C5B7BA]"}`}
           >
-            通知音 {notificationSoundEnabled ? "ON" : "OFF"}
+            <span className="inline-flex items-center gap-2"><AdminIcon name="volume-2" size={16} />通知音 {notificationSoundEnabled ? "ON" : "OFF"}</span>
           </button>
         </header>
 
-        <nav className="sticky top-0 z-30 -mx-3 mb-6 grid grid-cols-5 gap-1 border-y border-[#49323F] bg-[#100D10]/95 px-2 py-2 backdrop-blur sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-[#1B151A] sm:p-2">
+        <nav className="sticky top-0 z-30 -mx-3 mb-6 grid grid-cols-6 gap-1 border-y border-[#49323F] bg-[#100D10]/95 px-2 py-2 backdrop-blur sm:static sm:mx-0 sm:rounded-lg sm:border sm:bg-[#1B151A] sm:p-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -1174,13 +1177,14 @@ export default function AdminPage() {
                 setShowHistory(tab.id === "history");
                 if (tab.id !== "customers") setSelectedCustomerId(null);
               }}
-              className={`relative flex min-h-12 items-center justify-center rounded-md px-1 py-2 text-xs font-semibold tracking-wide transition sm:text-sm ${
+              className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-md px-1 py-2 text-[11px] font-semibold tracking-wide transition sm:text-xs ${
                 activeTab === tab.id
                   ? "bg-[#71364F] text-[#FFF9F5] shadow-[0_5px_16px_rgba(0,0,0,0.28)]"
                   : "text-[#C5B7BA] hover:bg-[#382832]"
               }`}
             >
-              {tab.label}
+              <AdminIcon name={tab.icon} size={19} />
+              <span>{tab.label}</span>
               {tab.badge > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#100D10] bg-[#C83D4D] px-1 text-[10px] font-black leading-none text-white">
                   {tab.badge > 99 ? "99+" : tab.badge}
@@ -1214,6 +1218,7 @@ export default function AdminPage() {
                     <div className="mb-2 flex items-center justify-between gap-3 px-1">
                       <div>
                         <h3 className="text-base font-semibold text-[#F3EDEB]">{group.nickname} 様</h3>
+                        <p className="text-[10px] text-[#8F8288]">ID：{group.customer_id.slice(0, 8)}</p>
                         <p className="mt-0.5 text-xs text-[#A18F96]">{group.orders.length}件の注文 ・ 商品 {groupItemCount}点</p>
                       </div>
                       {groupUnserved > 0 && <span className="shrink-0 text-xs font-semibold text-[#E0525B]">● 未提供 {groupUnserved}件</span>}
@@ -1234,22 +1239,82 @@ export default function AdminPage() {
             <div className="mb-5">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">GUESTS</p>
               <h2 className="mt-1 text-2xl font-semibold">お客様一覧</h2>
-              <p className="mt-2 text-sm text-[#A18F96]">お客様を選択すると、その方の注文だけを表示します。</p>
+              <p className="mt-2 text-sm text-[#A18F96]">お客様を選択すると、注文・提供状況・会計金額を確認できます。</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-3">
               {activeCustomers.map((customer) => {
                 const selected = selectedCustomerId === customer.customer_id;
+                const customerTotal = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * item.quantity, 0), 0);
+                const totalQuantity = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+                const servedQuantity = customer.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.served_quantity, 0), 0);
+                const hasCheckoutRequest = customer.orders.some((order) => order.checkout_status === "requested");
                 return (
-                  <button key={customer.customer_id} onClick={() => { setSelectedCustomerId(selected ? null : customer.customer_id); setActiveTab("orders"); setShowHistory(false); }} className={`rounded-lg border p-4 text-left transition ${selected ? "border-[#D7B77C] bg-[#382832]" : "border-[#49323F] bg-[#1B151A] hover:bg-[#261D23]"}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-[#F3EDEB]">{customer.nickname} 様</span>
-                      <span className="text-xs text-[#D7B77C]">注文を見る →</span>
+                  <article key={customer.customer_id} className="overflow-hidden rounded-md border border-[#49323F] bg-[#1B151A]">
+                    <div className="flex items-center gap-2 p-3 sm:p-4">
+                      <button type="button" onClick={() => setSelectedCustomerId(selected ? null : customer.customer_id)} className="min-w-0 flex-1 rounded-md px-1 py-1 text-left hover:bg-[#261D23]">
+                        <span className="block font-semibold text-[#F3EDEB]">{customer.nickname} 様</span>
+                        <span className="mt-0.5 block text-[10px] text-[#8F8288]">ID：{customer.customer_id.slice(0, 8)}</span>
+                        <span className="mt-1 block text-xs text-[#A18F96]">{selected ? "詳細を閉じる −" : "詳細を見る ＋"}</span>
+                      </button>
+                      <button type="button" onClick={() => serveAllCustomerItems(customer.customer_id, customer.nickname)} disabled={servedQuantity >= totalQuantity} className="shrink-0 rounded-md border border-[#A9785D]/60 bg-[#382832] px-3 py-2.5 text-[11px] font-semibold leading-snug text-[#F3D9AE] transition hover:bg-[#49323F] disabled:cursor-not-allowed disabled:border-[#49323F] disabled:bg-[#261D23] disabled:text-[#8F8288] sm:px-3 sm:text-xs">
+                        {servedQuantity >= totalQuantity ? "全て提供済み" : "全品提供済みにする"}
+                      </button>
                     </div>
-                    <p className="mt-2 text-sm text-[#C5B7BA]">{customer.orderCount}件の注文 / 商品 {customer.itemCount}点</p>
-                  </button>
+                    {selected && (
+                      <div className="border-t border-[#49323F] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-lg font-semibold text-[#F3EDEB]">{customer.nickname} 様</h3>
+                            <p className="mt-0.5 text-[10px] text-[#8F8288]">GUEST ID：{customer.customer_id.slice(0, 8)}</p>
+                          </div>
+                          <span className={`text-xs font-semibold ${servedQuantity >= totalQuantity ? "text-[#D8B58A]" : "text-[#E0525B]"}`}>提供済み {servedQuantity} / {totalQuantity}</span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                          <div className="rounded-sm bg-[#261D23] p-3"><p className="text-xs text-[#A18F96]">会計金額</p><p className="mt-1 text-lg font-bold text-[#F3EDEB]">¥{customerTotal.toLocaleString("ja-JP")}</p></div>
+                          <div className="rounded-sm bg-[#261D23] p-3"><p className="text-xs text-[#A18F96]">注文・商品</p><p className="mt-1 text-lg font-bold text-[#F3EDEB]">{customer.orderCount}件 / {totalQuantity}点</p></div>
+                        </div>
+                        <p className="mt-3 text-sm text-[#C5B7BA]">会計状態：{hasCheckoutRequest ? "お会計依頼中" : "未会計"}</p>
+                        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                          {!hasCheckoutRequest ? (
+                            <button type="button" onClick={() => startCustomerCheckout(customer.customer_id, customer.nickname)} className="flex-1 rounded-md bg-[#71364F] px-3 py-3 text-sm font-semibold text-[#FFF9F5]">このお客様のお会計をする</button>
+                          ) : (
+                            <button type="button" onClick={() => cancelCustomerCheckout(customer.customer_id, customer.nickname)} className="flex-1 rounded-md border border-[#C83D4D]/60 bg-[#382832] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計依頼を取り消す</button>
+                          )}
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {customer.orders.map(renderOrder)}
+                        </div>
+                      </div>
+                    )}
+                  </article>
                 );
               })}
               {activeCustomers.length === 0 && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">現在ご注文中のお客様はいません。</p>}
+            </div>
+          </section>
+        )}
+
+        {activeTab === "checkout" && (
+          <section>
+            <div className="mb-5 flex items-end justify-between gap-3">
+              <div><p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">CHECKOUT</p><h2 className="mt-1 text-2xl font-semibold">お会計</h2></div>
+              <span className="text-xs text-[#A18F96]">依頼中 {orders.filter((order) => order.checkout_status === "requested").length}件</span>
+            </div>
+            <div className="space-y-4">
+              {groupOrdersByCustomer(orders.filter((order) => order.checkout_status === "requested")).map((group) => {
+                const total = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.price * item.quantity, 0), 0);
+                const unserved = group.orders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Math.max(0, item.quantity - item.served_quantity), 0), 0);
+                const payment = group.orders.find((order) => order.payment_method)?.payment_method;
+                return <section key={group.customer_id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold text-[#F3EDEB]">{group.nickname} 様</h3><p className="text-[10px] text-[#8F8288]">GUEST ID：{group.customer_id.slice(0, 8)}</p></div><span className="text-sm font-bold text-[#E0525B]">● お会計依頼中</span></div>
+                  <div className="mt-3 space-y-3">{group.orders.map(renderOrder)}</div>
+                  <div className="mt-4 flex items-center justify-between border-t border-[#49323F] pt-3"><span className="text-sm text-[#C5B7BA]">合計</span><strong className="text-xl">¥{total.toLocaleString("ja-JP")}</strong></div>
+                  <p className="mt-2 text-sm text-[#C5B7BA]">支払い方法：{payment === "cash" ? "現金" : payment === "paypay" ? "PayPay" : "未選択（スタッフが選択）"}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => cancelCustomerCheckout(group.customer_id, group.nickname)} className="rounded-md border border-[#C83D4D]/60 bg-[#382832] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計を取り消す</button><button type="button" onClick={() => completeCustomerCheckout(group.customer_id, group.nickname)} className="rounded-md bg-[#71364F] px-3 py-3 text-sm font-semibold text-[#FFF9F5]">会計を完了する</button></div>
+                  {unserved > 0 && <p className="mt-2 text-xs font-semibold text-[#E0525B]">未提供商品が {unserved} 点あります</p>}
+                </section>;
+              })}
+              {orders.every((order) => order.checkout_status !== "requested") && <p className="rounded-md border border-[#49323F] bg-[#1B151A] p-6 text-center text-sm text-[#A18F96]">現在、お会計依頼はありません。</p>}
             </div>
           </section>
         )}
@@ -1269,6 +1334,7 @@ export default function AdminPage() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-semibold text-[#F3EDEB]">{call.nickname} 様</p>
+                      <p className="text-[10px] text-[#8F8288]">ID：{call.customer_id.slice(0, 8)}</p>
                       <p className="mt-1 text-xs text-[#D7B77C]">{new Date(call.created_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} 呼び出し</p>
                     </div>
                     <span className="rounded-full bg-[#C83D4D]/15 px-3 py-1 text-xs font-bold text-[#F08A91]">未対応</span>
@@ -1320,7 +1386,7 @@ export default function AdminPage() {
             <div className="space-y-4">
               {historyCustomerGroups.map((group) => (
                 <section key={group.customer_id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-3">
-                  <h3 className="mb-2 px-1 text-base font-semibold text-[#F3EDEB]">{group.nickname} 様</h3>
+                  <div className="mb-3 flex items-center justify-between gap-3 px-1"><div><h3 className="text-base font-semibold text-[#F3EDEB]">{group.nickname} 様</h3><p className="text-[10px] text-[#8F8288]">GUEST ID：{group.customer_id.slice(0, 8)}</p></div><button type="button" onClick={() => resetCustomerTerminal(group.customer_id, group.nickname)} className="shrink-0 rounded-md border border-[#71364F] bg-[#382832] px-3 py-2 text-xs font-semibold text-[#F3D9AE]"><span className="inline-flex items-center gap-1.5"><AdminIcon name="refresh-ccw" size={14} />端末をリセット</span></button></div>
                   <div className="space-y-3">{group.orders.map(renderOrder)}</div>
                 </section>
               ))}
@@ -1328,6 +1394,20 @@ export default function AdminPage() {
             </div>
           </section>
         )}
+        {checkoutPaymentCustomerId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5">
+            <div className="w-full max-w-sm rounded-md border border-[#49323F] bg-[#1B151A] p-5 shadow-2xl">
+              <h2 className="text-lg font-bold text-[#F3EDEB]">支払い方法を選択</h2>
+              <p className="mt-2 text-sm text-[#C5B7BA]">スタッフ側から会計を開始したお客様です。実際の支払い方法を選択してください。</p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => finalizeCustomerCheckout(checkoutPaymentCustomerId, "cash")} className="rounded-md bg-[#382832] px-3 py-4 font-semibold text-[#F3EDEB]">現金</button>
+                <button type="button" onClick={() => finalizeCustomerCheckout(checkoutPaymentCustomerId, "paypay")} className="rounded-md bg-[#382832] px-3 py-4 font-semibold text-[#F3EDEB]">PayPay</button>
+              </div>
+              <button type="button" onClick={() => setCheckoutPaymentCustomerId(null)} className="mt-3 w-full rounded-md border border-[#49323F] px-3 py-2 text-sm text-[#C5B7BA]">戻る</button>
+            </div>
+          </div>
+        )}
+
       </div>
     </main>
   );
