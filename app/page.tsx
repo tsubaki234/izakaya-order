@@ -13,6 +13,7 @@ type Product = {
 
 type CartItem = Product & {
   quantity: number;
+  option: string | null;
 };
 
 type CustomerOrder = {
@@ -23,6 +24,7 @@ type CustomerOrder = {
   created_at: string;
   items: {
     productName: string;
+    option: string | null;
     price: number;
     quantity: number;
     served_quantity: number;
@@ -30,10 +32,36 @@ type CustomerOrder = {
   }[];
 };
 
+const MENU_PRESENTATION: Record<string, { english: string; reading: string; category: string; optionType?: "temperature" | "mixer" }> = {
+  "ビール": { english: "Beer", reading: "ビール", category: "Alcohol" },
+  "ハイボール": { english: "Highball", reading: "ハイボール", category: "Alcohol" },
+  "レモンサワー": { english: "Lemon Sour", reading: "レモンサワー", category: "Alcohol" },
+  "コーン茶ハイ": { english: "Corn Tea Highball", reading: "コーンチャハイ", category: "Alcohol" },
+  "ウーロンハイ": { english: "Oolong Tea Highball", reading: "ウーロンハイ", category: "Alcohol" },
+  "カシス": { english: "Cassis", reading: "カシス", category: "Alcohol", optionType: "mixer" },
+  "赤": { english: "Red Wine", reading: "アカ", category: "Wine" },
+  "白": { english: "White Wine", reading: "シロ", category: "Wine" },
+  "赤ワイン": { english: "Red Wine", reading: "アカワイン", category: "Wine" },
+  "白ワイン": { english: "White Wine", reading: "シロワイン", category: "Wine" },
+  "オレンジジュース": { english: "Orange Juice", reading: "オレンジジュース", category: "Soft Drinks" },
+  "コーヒー": { english: "Coffee", reading: "コーヒー", category: "Soft Drinks", optionType: "temperature" },
+  "コーン茶": { english: "Corn Tea", reading: "コーンチャ", category: "Soft Drinks", optionType: "temperature" },
+  "ウーロン茶": { english: "Oolong Tea", reading: "ウーロンチャ", category: "Soft Drinks", optionType: "temperature" },
+};
+
+const CATEGORY_PRICES: Record<string, number> = {
+  Alcohol: 800,
+  Wine: 1200,
+  "Soft Drinks": 600,
+};
+
+const getMenuPresentation = (name: string) => MENU_PRESENTATION[name];
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
+  const [optionProduct, setOptionProduct] = useState<Product | null>(null);
   const [ordered, setOrdered] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -48,7 +76,7 @@ export default function Home() {
   const [staffCallPending, setStaffCallPending] = useState(false);
   const [callingStaff, setCallingStaff] = useState(false);
   const [customerTab, setCustomerTab] = useState<"menu" | "orders" | "history">("menu");
-  const [selectedCategory, setSelectedCategory] = useState("すべて");
+  const [selectedCategory, setSelectedCategory] = useState("All");
   const [checkoutDisplayOrders, setCheckoutDisplayOrders] = useState<
     CustomerOrder[]
   >([]);
@@ -100,7 +128,7 @@ export default function Home() {
       const { data: items, error: itemsError } = await supabase
         .from("order_items")
         .select(
-          "order_id, product_id, quantity, served_quantity, status"
+          "order_id, product_id, quantity, served_quantity, status, option"
         )
         .in("order_id", orderIds);
 
@@ -141,6 +169,7 @@ export default function Home() {
 
             return {
               productName: product?.name ?? "不明な商品",
+              option: item.option ?? null,
               price: product?.price ?? 0,
               quantity: item.quantity,
               served_quantity: servedQuantity,
@@ -306,7 +335,7 @@ export default function Home() {
           setNicknameInput("");
           setOrderHistory([]);
           setCustomerTab("menu");
-          setSelectedCategory("すべて");
+          setSelectedCategory("All");
           setCheckoutRequested(false);
           setCheckoutDisplayOrders([]);
           setCart([]);
@@ -354,7 +383,6 @@ export default function Home() {
       const { data, error } = await supabase
         .from("products")
         .select("*")
-        .eq("is_available", true)
         .order("id");
 
       if (error) {
@@ -366,6 +394,17 @@ export default function Home() {
     };
 
     loadProducts();
+
+    const channel = supabase
+      .channel("customer-products")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
+        loadProducts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // お客様登録
@@ -401,38 +440,36 @@ export default function Home() {
     setLoading(false);
   };
 
-  // カートに追加
-  const addToCart = (product: Product) => {
+  // 商品をカートに追加（オプション別に別行として管理）
+  const addToCart = (product: Product, option: string | null = null) => {
+    if (!product.is_available) return;
     setCart((currentCart) => {
       const existing = currentCart.find(
-        (item) => item.id === product.id
+        (item) => item.id === product.id && item.option === option
       );
-
       if (existing) {
         return currentCart.map((item) =>
-          item.id === product.id
+          item.id === product.id && item.option === option
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
       }
-
-      return [...currentCart, { ...product, quantity: 1 }];
+      return [...currentCart, { ...product, quantity: 1, option }];
     });
+    setOptionProduct(null);
   };
 
   // カートの個数を変更
   const changeCartQuantity = (
     productId: number,
+    option: string | null,
     amount: number
   ) => {
     setCart((currentCart) =>
       currentCart
         .map((item) =>
-          item.id === productId
-            ? {
-                ...item,
-                quantity: item.quantity + amount,
-              }
+          item.id === productId && item.option === option
+            ? { ...item, quantity: item.quantity + amount }
             : item
         )
         .filter((item) => item.quantity > 0)
@@ -623,6 +660,7 @@ export default function Home() {
       order_id: order.id,
       product_id: item.id,
       quantity: item.quantity,
+      option: item.option,
     }));
 
     const { error: itemsError } = await supabase
@@ -668,7 +706,7 @@ export default function Home() {
   if (!customerId) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
-        <div className="w-full max-w-md rounded-2xl bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+        <div className="w-full max-w-md rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
           <h1 className="text-2xl font-black text-[#F3EDEB]">
             myonga
           </h1>
@@ -685,13 +723,13 @@ export default function Home() {
             }
             placeholder="例：はるき"
             maxLength={20}
-            className="mt-4 w-full rounded-xl border border-[#49323F] bg-[#261D23] p-3 text-[#F3EDEB] outline-none placeholder:text-[#A18F96] focus:border-[#71364F] focus:ring-2 focus:ring-[#71364F]/20"
+            className="mt-4 w-full rounded-md border border-[#49323F] bg-[#261D23] p-3 text-[#F3EDEB] outline-none placeholder:text-[#A18F96] focus:border-[#71364F] focus:ring-2 focus:ring-[#71364F]/20"
           />
 
           <button
             onClick={registerCustomer}
             disabled={loading}
-            className="mt-4 w-full rounded-xl bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F] disabled:opacity-50"
+            className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F] disabled:opacity-50"
           >
             {loading ? "登録中..." : "入店する"}
           </button>
@@ -703,7 +741,7 @@ export default function Home() {
   if (ordered) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
-        <div className="w-full max-w-md rounded-2xl bg-[#1B151A] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+        <div className="w-full max-w-md rounded-md bg-[#1B151A] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
           <h1 className="text-2xl font-black text-[#F3EDEB]">
             注文しました！
           </h1>
@@ -721,7 +759,7 @@ export default function Home() {
               setOrdered(false);
               window.location.reload();
             }}
-            className="mt-6 w-full rounded-xl bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F]"
+            className="mt-6 w-full rounded-md bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F]"
           >
             メニューに戻る
           </button>
@@ -733,9 +771,9 @@ export default function Home() {
   // 会計依頼後の画面
   if (checkoutRequested) {
     return (
-      <main className="min-h-screen bg-[#100D10] p-6">
+      <main style={{ fontFamily: 'Georgia, "Times New Roman", "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif' }} className="min-h-screen bg-[#100D10] p-6">
         <div className="mx-auto w-full max-w-md">
-          <div className="rounded-2xl bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+          <div className="rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
             <h1 className="text-2xl font-black text-[#F3EDEB]">
               お会計
             </h1>
@@ -744,7 +782,7 @@ export default function Home() {
               {nickname}様
             </p>
 
-            <div className="mt-5 rounded-lg bg-[#261D23] p-4 text-center">
+            <div className="mt-5 rounded-md bg-[#261D23] p-4 text-center">
               <p className="font-bold text-[#D7B77C]">
                 お会計を承りました
               </p>
@@ -754,7 +792,7 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="mt-4 rounded-lg border border-[#49323F] bg-[#261D23] p-3 text-center">
+            <div className="mt-4 rounded-md border border-[#49323F] bg-[#261D23] p-3 text-center">
               <p className="text-sm text-[#A18F96]">お支払い方法</p>
               <p className="mt-1 font-bold text-[#F3EDEB]">
                 {checkoutDisplayOrders[0]?.payment_method === "cash"
@@ -786,7 +824,7 @@ export default function Home() {
                   return (
                     <div
                       key={order.id}
-                      className="rounded-lg border border-[#49323F] bg-[#261D23] p-4"
+                      className="rounded-md border border-[#49323F] bg-[#261D23] p-4"
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -801,7 +839,7 @@ export default function Home() {
                         </div>
 
                         <span className="text-sm font-bold text-[#F3EDEB]">
-                          ¥{currentOrderTotal}
+                          ¥{currentOrderTotal.toLocaleString("en-US")}
                         </span>
                       </div>
 
@@ -817,9 +855,7 @@ export default function Home() {
                             </span>
 
                             <span>
-                              ¥
-                              {item.price *
-                                item.quantity}
+                              ¥{(item.price * item.quantity).toLocaleString("en-US")}
                             </span>
                           </div>
                         ))}
@@ -833,7 +869,7 @@ export default function Home() {
             <div className="mt-6 border-t border-[#49323F] pt-5">
               <div className="flex items-center justify-between text-2xl font-bold text-[#F3EDEB]">
                 <span>お会計合計</span>
-                <span>¥{checkoutDisplayTotal}</span>
+                <span>¥{checkoutDisplayTotal.toLocaleString("en-US")}</span>
               </div>
             </div>
 
@@ -847,7 +883,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#100D10] p-6 pb-28">
+    <main style={{ fontFamily: 'Georgia, "Times New Roman", "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", serif' }} className="min-h-screen bg-[#100D10] p-6 pb-28">
       <div className="mx-auto w-full max-w-md">
         <h1 className="text-3xl font-semibold tracking-[0.22em] text-[#F3EDEB]">
           myonga
@@ -858,7 +894,7 @@ export default function Home() {
         <button
           onClick={callStaff}
           disabled={callingStaff || staffCallPending}
-          className={`mt-4 w-full rounded-xl border border-[#A9785D]/50 px-4 py-3 font-semibold tracking-wide transition ${
+          className={`mt-4 w-full rounded-md border border-[#A9785D]/50 px-4 py-3 font-semibold tracking-wide transition ${
             staffCallPending
               ? "bg-[#382832] text-[#C5B7BA]"
               : "bg-[#71364F] text-[#FFF9F5] hover:bg-[#87445F]"
@@ -877,7 +913,7 @@ export default function Home() {
         )}
 
         {/* メインタブ */}
-        <nav className="mt-7 grid grid-cols-3 gap-2 rounded-2xl border border-[#49323F] bg-[#1B151A] p-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
+        <nav className="mt-7 grid grid-cols-3 gap-2 rounded-md border border-[#49323F] bg-[#1B151A] p-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
           {([
             ["menu", "メニュー"],
             ["orders", "注文状況"],
@@ -886,7 +922,7 @@ export default function Home() {
             <button
               key={tab}
               onClick={() => setCustomerTab(tab)}
-              className={`relative rounded-xl px-2 py-3 text-sm font-bold tracking-wide transition ${
+              className={`relative rounded-md px-2 py-3 text-sm font-bold tracking-wide transition ${
                 customerTab === tab
                   ? "bg-[#71364F] text-[#FFF9F5] shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
                   : "text-[#C5B7BA] hover:bg-[#382832]"
@@ -908,17 +944,17 @@ export default function Home() {
             <div className="mb-4 flex items-end justify-between">
               <div>
                 <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">MENU</p>
-                <h2 className="mt-1 text-2xl font-semibold tracking-wide text-[#F3EDEB]">メニュー</h2>
+                <h2 className="mt-1 font-serif text-2xl font-semibold tracking-wide text-[#F3EDEB]">Menu</h2>
               </div>
-              <span className="text-xs text-[#A18F96]">{products.length} items</span>
+              <span className="text-xs text-[#A18F96]">{products.filter((product) => Boolean(getMenuPresentation(product.name))).length} items</span>
             </div>
 
             {(() => {
-              const categories = ["すべて", ...Array.from(new Set(products.map((product) => product.category?.trim() || "その他")))];
-              const categoryExists = products.some((product) => (product.category?.trim() || "その他") === selectedCategory);
-              const visibleProducts = selectedCategory === "すべて" || !categoryExists
-                ? products
-                : products.filter((product) => (product.category?.trim() || "その他") === selectedCategory);
+              const catalogProducts = products.filter((product) => Boolean(getMenuPresentation(product.name)));
+              const categories = ["All", "Alcohol", "Wine", "Soft Drinks"];
+              const visibleProducts = selectedCategory === "All"
+                ? catalogProducts
+                : catalogProducts.filter((product) => getMenuPresentation(product.name)?.category === selectedCategory);
               return (
                 <>
                   <div className="-mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-2">
@@ -926,7 +962,7 @@ export default function Home() {
                       <button
                         key={category}
                         onClick={() => setSelectedCategory(category)}
-                        className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        className={`shrink-0 rounded-md border px-4 py-2 text-sm font-semibold transition ${
                           selectedCategory === category
                             ? "border-[#D7B77C] bg-[#382832] text-[#F3D9AE]"
                             : "border-[#49323F] bg-[#1B151A] text-[#C5B7BA] hover:bg-[#382832]"
@@ -937,24 +973,47 @@ export default function Home() {
                     ))}
                   </div>
                   <div className="space-y-3">
-                    {visibleProducts.map((product) => (
-                      <article key={product.id} className="rounded-2xl border border-[#49323F] bg-gradient-to-br from-[#261D23] to-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-base font-semibold tracking-wide text-[#F3EDEB]">{product.name}</p>
-                            <p className="mt-2 text-sm font-medium text-[#D7B77C]">¥{product.price.toLocaleString("ja-JP")}</p>
+                    {(selectedCategory === "All" ? ["Alcohol", "Wine", "Soft Drinks"] : [selectedCategory]).map((category) => {
+                      const categoryProducts = visibleProducts.filter((product) => getMenuPresentation(product.name)?.category === category);
+                      if (categoryProducts.length === 0) return null;
+                      return (
+                        <section key={category} className="space-y-3">
+                          <div className="flex items-baseline justify-between border-b border-[#49323F] pb-3 pt-2">
+                            <span className="font-serif text-lg tracking-wide text-[#F3EDEB]">{category}</span>
+                            <span className="text-sm tracking-wide text-[#D7B77C]">¥{CATEGORY_PRICES[category].toLocaleString("en-US")}</span>
                           </div>
-                          <button
-                            onClick={() => addToCart(product)}
-                            className="shrink-0 rounded-xl border border-[#A9785D]/60 bg-[#71364F] px-4 py-2.5 text-sm font-bold text-[#FFF9F5] shadow-[0_4px_12px_rgba(0,0,0,0.22)] transition hover:bg-[#87445F] active:scale-[0.98]"
-                          >
-                            ＋ 追加
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                          {categoryProducts.map((product) => {
+                            const presentation = getMenuPresentation(product.name)!;
+                            const optionHint = presentation.optionType === "temperature"
+                              ? "Hot / Iced available"
+                              : presentation.optionType === "mixer"
+                                ? "Orange / Soda available"
+                                : null;
+                            return (
+                              <article key={product.id} className="rounded-md border border-[#49323F] bg-gradient-to-br from-[#261D23] to-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="mb-0.5 text-[10px] tracking-[0.16em] text-[#A18F96]">{presentation.reading}</p>
+                                    <p className="font-serif text-lg tracking-wide text-[#F3EDEB]">{presentation.english}</p>
+                                    {optionHint && <p className="mt-1 text-[11px] tracking-wide text-[#A18F96]">{optionHint}</p>}
+                                    {!product.is_available && <p className="mt-1 text-xs font-semibold tracking-wide text-[#F08A91]">SOLD OUT</p>}
+                                  </div>
+                                  <button
+                                    onClick={() => presentation.optionType ? setOptionProduct(product) : addToCart(product)}
+                                    disabled={!product.is_available}
+                                    className="shrink-0 rounded-md border border-[#A9785D]/60 bg-[#71364F] px-4 py-2.5 text-sm font-semibold tracking-wide text-[#FFF9F5] transition hover:bg-[#87445F] active:scale-[0.98] disabled:cursor-not-allowed disabled:border-[#49323F] disabled:bg-[#382832] disabled:text-[#A18F96]"
+                                  >
+                                    {product.is_available ? "＋ Add" : "Unavailable"}
+                                  </button>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </section>
+                      );
+                    })}
                     {visibleProducts.length === 0 && (
-                      <div className="rounded-2xl border border-dashed border-[#49323F] bg-[#1B151A] p-8 text-center text-sm text-[#A18F96]">
+                      <div className="rounded-md border border-dashed border-[#49323F] bg-[#1B151A] p-8 text-center text-sm text-[#A18F96]">
                         このカテゴリの商品はありません。
                       </div>
                     )}
@@ -970,10 +1029,10 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">YOUR ORDERS</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-wide text-[#F3EDEB]">注文状況</h2>
+              <h2 className="mt-1 font-serif text-2xl font-semibold tracking-wide text-[#F3EDEB]">Your Orders</h2>
             </div>
             {currentOrders.length === 0 ? (
-              <div className="rounded-2xl border border-[#49323F] bg-[#1B151A] p-7 text-center">
+              <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center">
                 <p className="text-sm text-[#C5B7BA]">現在、提供待ちのご注文はありません。</p>
               </div>
             ) : (
@@ -984,7 +1043,7 @@ export default function Home() {
                   const allItemsServed = order.items.length > 0 && order.items.every((item) => item.served_quantity >= item.quantity);
                   const someItemsServed = order.items.some((item) => item.served_quantity > 0);
                   return (
-                    <article key={order.id} className="rounded-2xl border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
+                    <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-[#F3EDEB]">{orderDate.date} {orderDate.time}</p>
@@ -1001,7 +1060,7 @@ export default function Home() {
                           const partiallyServed = served > 0 && served < item.quantity;
                           return (
                             <div key={index} className="flex items-center justify-between gap-3 text-sm">
-                              <span className={fullyServed ? "text-[#D7B77C]" : "text-[#F3EDEB]"}>{item.productName} × {item.quantity}</span>
+                              <span className={fullyServed ? "text-[#D7B77C]" : "text-[#F3EDEB]"}>{getMenuPresentation(item.productName)?.english ?? item.productName}{item.option ? ` · ${item.option}` : ""} × {item.quantity}</span>
                               <span className="shrink-0 text-right text-xs font-semibold text-[#C5B7BA]">
                                 {fullyServed ? "提供済み" : partiallyServed ? `${served} / ${item.quantity} 提供済み` : `0 / ${item.quantity} 提供待ち`}
                               </span>
@@ -1009,7 +1068,7 @@ export default function Home() {
                           );
                         })}
                       </div>
-                      <div className="mt-4 border-t border-[#49323F] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("ja-JP")}</div>
+                      <div className="mt-4 border-t border-[#49323F] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("en-US")}</div>
                     </article>
                   );
                 })}
@@ -1017,11 +1076,11 @@ export default function Home() {
             )}
 
             {checkoutOrders.length > 0 && (
-              <div className="mt-5 rounded-2xl border border-[#A9785D]/50 bg-gradient-to-br from-[#382832] to-[#1B151A] p-4">
+              <div className="mt-5 rounded-md border border-[#A9785D]/50 bg-gradient-to-br from-[#382832] to-[#1B151A] p-4">
                 <div className="flex items-center justify-between text-lg font-semibold text-[#F3EDEB]">
-                  <span>お会計合計</span><span className="text-[#D7B77C]">¥{orderTotal.toLocaleString("ja-JP")}</span>
+                  <span>お会計合計</span><span className="text-[#D7B77C]">¥{orderTotal.toLocaleString("en-US")}</span>
                 </div>
-                <button onClick={() => setShowPaymentModal(true)} className="mt-4 w-full rounded-xl bg-[#71364F] px-4 py-3.5 font-bold text-[#FFF9F5] transition hover:bg-[#87445F]">お会計へ進む</button>
+                <button onClick={() => setShowPaymentModal(true)} className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-3.5 font-bold text-[#FFF9F5] transition hover:bg-[#87445F]">お会計へ進む</button>
               </div>
             )}
           </section>
@@ -1032,17 +1091,17 @@ export default function Home() {
           <section className="mt-7">
             <div className="mb-4">
               <p className="text-[10px] font-semibold tracking-[0.28em] text-[#D7B77C]">ORDER HISTORY</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-wide text-[#F3EDEB]">注文履歴</h2>
+              <h2 className="mt-1 font-serif text-2xl font-semibold tracking-wide text-[#F3EDEB]">Order History</h2>
             </div>
             {servedOrders.length === 0 ? (
-              <div className="rounded-2xl border border-[#49323F] bg-[#1B151A] p-7 text-center text-sm text-[#A18F96]">提供済みのご注文はまだありません。</div>
+              <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center text-sm text-[#A18F96]">提供済みのご注文はまだありません。</div>
             ) : (
               <div className="space-y-4">
                 {[...servedOrders].reverse().map((order) => {
                   const orderDate = formatOrderDate(order.created_at);
                   const currentOrderTotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
                   return (
-                    <article key={order.id} className="rounded-2xl border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
+                    <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-[#F3EDEB]">{orderDate.date} {orderDate.time}</p>
@@ -1053,12 +1112,12 @@ export default function Home() {
                       <div className="mt-4 space-y-2 border-t border-[#49323F] pt-4">
                         {order.items.map((item, index) => (
                           <div key={index} className="flex items-center justify-between gap-3 text-sm text-[#F3EDEB]">
-                            <span>{item.productName} × {item.quantity}</span>
-                            <span className="text-[#C5B7BA]">¥{(item.price * item.quantity).toLocaleString("ja-JP")}</span>
+                            <span>{getMenuPresentation(item.productName)?.english ?? item.productName}{item.option ? ` · ${item.option}` : ""} × {item.quantity}</span>
+                            <span className="text-[#C5B7BA]">¥{(item.price * item.quantity).toLocaleString("en-US")}</span>
                           </div>
                         ))}
                       </div>
-                      <div className="mt-4 border-t border-[#49323F] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("ja-JP")}</div>
+                      <div className="mt-4 border-t border-[#49323F] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("en-US")}</div>
                     </article>
                   );
                 })}
@@ -1069,7 +1128,7 @@ export default function Home() {
 
         {showPaymentModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5">
-            <div className="w-full max-w-sm rounded-2xl border border-[#49323F] bg-[#1B151A] p-5 shadow-2xl">
+            <div className="w-full max-w-sm rounded-md border border-[#49323F] bg-[#1B151A] p-5 shadow-2xl">
               <h2 className="text-xl font-black text-[#F3EDEB]">
                 お支払い方法
               </h2>
@@ -1079,20 +1138,20 @@ export default function Home() {
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <button
                   onClick={() => requestCheckout("cash")}
-                  className="rounded-xl bg-[#382832] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#49323F]"
+                  className="rounded-md bg-[#382832] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#49323F]"
                 >
                   💴 現金
                 </button>
                 <button
                   onClick={() => requestCheckout("paypay")}
-                  className="rounded-xl bg-[#382832] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#49323F]"
+                  className="rounded-md bg-[#382832] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#49323F]"
                 >
                   PayPay
                 </button>
               </div>
               <button
                 onClick={() => setShowPaymentModal(false)}
-                className="mt-4 w-full rounded-lg border border-[#49323F] px-4 py-3 font-bold text-[#C5B7BA] transition hover:bg-[#261D23]"
+                className="mt-4 w-full rounded-md border border-[#49323F] px-4 py-3 font-bold text-[#C5B7BA] transition hover:bg-[#261D23]"
               >
                 戻る
               </button>
@@ -1106,31 +1165,48 @@ export default function Home() {
       {/* カート固定ボタン */}
       <button
         onClick={() => setCartOpen(true)}
-        className="fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-md rounded-2xl bg-[#71364F] px-5 py-4 font-bold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#87445F] active:scale-[0.99]"
+        className="fixed bottom-4 left-4 right-4 z-40 mx-auto max-w-md rounded-md bg-[#71364F] px-5 py-4 font-bold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#87445F] active:scale-[0.99]"
       >
-        🛒 カート
+        Your Cart
         {cartQuantity > 0 && (
           <>
             <span className="mx-2">・</span>
-            {cartQuantity}点
+            {cartQuantity} items
             <span className="mx-2">・</span>
-            ¥{total}
+            ¥{total.toLocaleString("en-US")}
           </>
         )}
       </button>
+
+      {/* 商品オプション選択 */}
+      {optionProduct && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0A080B]/75 p-4 sm:items-center">
+          <div className="w-full max-w-md rounded-md border border-[#49323F] bg-[#1B151A] p-5 shadow-2xl">
+            <p className="text-[10px] tracking-[0.2em] text-[#D7B77C]">SELECT OPTION</p>
+            <h2 className="mt-1 font-serif text-2xl text-[#F3EDEB]">{getMenuPresentation(optionProduct.name)?.english}</h2>
+            <p className="mt-1 text-xs text-[#A18F96]">{getMenuPresentation(optionProduct.name)?.reading}</p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {(getMenuPresentation(optionProduct.name)?.optionType === "temperature" ? ["Hot", "Iced"] : ["Orange", "Soda"]).map((option) => (
+                <button key={option} onClick={() => addToCart(optionProduct, option)} className="rounded-md border border-[#A9785D]/60 bg-[#382832] px-4 py-4 font-serif text-lg text-[#F3EDEB] transition hover:bg-[#49323F]">{option}</button>
+              ))}
+            </div>
+            <button onClick={() => setOptionProduct(null)} className="mt-4 w-full rounded-md border border-[#49323F] px-4 py-3 text-sm text-[#C5B7BA]">Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* カート */}
       {cartOpen && (
         <div className="fixed inset-0 z-50 bg-[#0A080B]/70">
           <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-md rounded-t-2xl bg-[#1B151A] p-5 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-black text-[#F3EDEB]">
-                カート
+              <h2 className="font-serif text-xl font-semibold text-[#F3EDEB]">
+                Your Cart
               </h2>
 
               <button
                 onClick={() => setCartOpen(false)}
-                className="rounded-full bg-[#382832] px-3 py-2 text-lg text-[#F3EDEB]"
+                className="rounded-md bg-[#382832] px-3 py-2 text-lg text-[#F3EDEB]"
               >
                 ✕
               </button>
@@ -1138,30 +1214,30 @@ export default function Home() {
 
             {cart.length === 0 ? (
               <div className="py-10 text-center text-[#A18F96]">
-                カートは空です
+                Your cart is empty
               </div>
             ) : (
               <>
                 <div className="mt-5 max-h-[50vh] space-y-4 overflow-y-auto">
                   {cart.map((item) => (
                     <div
-                      key={item.id}
+                      key={`${item.id}-${item.option ?? "default"}`}
                       className="border-b border-[#49323F] pb-4"
                     >
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-bold text-[#F3EDEB]">
-                            {item.name}
+                            {getMenuPresentation(item.name)?.english ?? item.name}{item.option ? ` · ${item.option}` : ""}
                           </p>
 
                           <p className="text-sm text-[#C5B7BA]">
-                            ¥{item.price} ×{" "}
+                            ¥{item.price.toLocaleString("en-US")} ×{" "}
                             {item.quantity}
                           </p>
                         </div>
 
                         <p className="font-bold text-[#F3EDEB]">
-                          ¥{item.price * item.quantity}
+                          ¥{(item.price * item.quantity).toLocaleString("en-US")}
                         </p>
                       </div>
 
@@ -1170,10 +1246,11 @@ export default function Home() {
                           onClick={() =>
                             changeCartQuantity(
                               item.id,
+                              item.option,
                               -1
                             )
                           }
-                          className="h-10 w-10 rounded-lg bg-[#382832] text-xl font-bold text-[#F3EDEB]"
+                          className="h-10 w-10 rounded-md bg-[#382832] text-xl font-bold text-[#F3EDEB]"
                         >
                           −
                         </button>
@@ -1186,10 +1263,11 @@ export default function Home() {
                           onClick={() =>
                             changeCartQuantity(
                               item.id,
+                              item.option,
                               1
                             )
                           }
-                          className="h-10 w-10 rounded-lg bg-[#382832] text-xl font-bold text-[#F3EDEB]"
+                          className="h-10 w-10 rounded-md bg-[#382832] text-xl font-bold text-[#F3EDEB]"
                         >
                           ＋
                         </button>
@@ -1201,13 +1279,13 @@ export default function Home() {
                 <div className="mt-5 border-t border-[#49323F] pt-4">
                   <div className="flex items-center justify-between text-xl font-bold text-[#F3EDEB]">
                     <span>合計</span>
-                    <span>¥{total}</span>
+                    <span>¥{total.toLocaleString("en-US")}</span>
                   </div>
 
                   <button
                     onClick={placeOrder}
                     disabled={loading}
-                    className="mt-4 w-full rounded-xl bg-[#71364F] px-4 py-4 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F] disabled:opacity-50"
+                    className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-4 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F] disabled:opacity-50"
                   >
                     {loading
                       ? "注文中..."
