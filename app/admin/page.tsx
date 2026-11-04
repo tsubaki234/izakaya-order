@@ -1554,22 +1554,22 @@ export default function AdminPage() {
                 const requestTime = requestTimes.length > 0 ? requestTimes.sort()[0] : null;
                 const expanded = expandedCheckoutCustomerId === group.customer_id;
                 return <section key={group.customer_id} className="overflow-hidden rounded-md border border-[#6A243D] bg-[#261019]">
-                  <button type="button" onClick={() => setExpandedCheckoutCustomerId(expanded ? null : group.customer_id)} className="flex w-full items-center justify-between gap-3 p-4 text-left transition hover:bg-[#35131F]">
-                    <span className="min-w-0">
+                  <div className="flex w-full items-center gap-3 p-4">
+                    <button type="button" onClick={() => setExpandedCheckoutCustomerId(expanded ? null : group.customer_id)} className="min-w-0 flex-1 rounded-md text-left transition hover:bg-[#35131F]">
                       <span className="block font-serif font-medium text-[#F3EDEB]">{tableLabel(group.table_number)}</span>
                       <span className="mt-0.5 block text-[10px] text-[#8F8288]">ID：{group.customer_id.slice(0, 8)}</span>
-                      <span className="mt-2 block text-xs text-[#A18F96]">依頼時間：{requestTime ? new Date(requestTime).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "不明（旧データ）"}</span>
-                    </span>
-                    <span className="shrink-0 text-right">
-                      <span className="block text-xl font-semibold text-[#F3EDEB]">¥{total.toLocaleString("ja-JP")}</span>
                       <span className="mt-1 block text-xs text-[#A18F96]">{expanded ? "詳細を閉じる −" : "詳細を見る ＋"}</span>
-                    </span>
-                  </button>
+                      <span className="mt-2 block text-xs text-[#A18F96]">依頼時間：{requestTime ? new Date(requestTime).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "不明（旧データ）"}</span>
+                    </button>
+                    <div className="shrink-0 text-right">
+                      <span className="mb-2 block text-xl font-semibold text-[#F3EDEB]">¥{total.toLocaleString("ja-JP")}</span>
+                      <button type="button" onClick={() => completeCustomerCheckout(group.customer_id, tableLabel(group.table_number))} className="rounded-md bg-[#A51D43] px-3 py-2.5 text-sm font-semibold text-[#FFF9F5]">会計を完了</button>
+                    </div>
+                  </div>
                   {expanded && <div className="border-t border-[#6A243D] p-4">
                     <div className="space-y-3">{group.orders.map(renderOrder)}</div>
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                      <button type="button" onClick={() => cancelCustomerCheckout(group.customer_id, tableLabel(group.table_number))} className="rounded-md border border-[#C83D4D]/60 bg-[#4A182A] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計を取り消す</button>
-                      <button type="button" onClick={() => completeCustomerCheckout(group.customer_id, tableLabel(group.table_number))} className="rounded-md bg-[#A51D43] px-3 py-3 text-sm font-semibold text-[#FFF9F5]">会計を完了する</button>
+                    <div className="mt-4">
+                      <button type="button" onClick={() => cancelCustomerCheckout(group.customer_id, tableLabel(group.table_number))} className="w-full rounded-md border border-[#C83D4D]/60 bg-[#4A182A] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計を取り消す</button>
                     </div>
                   </div>}
                 </section>;
