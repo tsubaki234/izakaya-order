@@ -1,0 +1,25 @@
+{
+  "name": "myonga",
+  "short_name": "myonga",
+  "description": "myonga ご注文・スタッフ管理システム",
+  "lang": "ja",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#16070D",
+  "theme_color": "#A51D43",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

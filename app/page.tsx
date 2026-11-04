@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { APP_VERSION } from "@/lib/app-version";
 
 type Product = {
   id: number;
@@ -37,18 +38,18 @@ type CustomerOrder = {
 const MENU_PRESENTATION: Record<string, { english: string; reading: string; category: string; optionType?: "temperature" | "mixer" }> = {
   "ビール": { english: "Beer", reading: "ビール", category: "Alcohol" },
   "ハイボール": { english: "Highball", reading: "ハイボール", category: "Alcohol" },
-  "レモンサワー": { english: "Lemon Sour", reading: "レモンサワー", category: "Alcohol" },
-  "コーン茶ハイ": { english: "Corn Tea Highball", reading: "コーンチャハイ", category: "Alcohol" },
-  "ウーロンハイ": { english: "Oolong Tea Highball", reading: "ウーロンハイ", category: "Alcohol" },
+  "レモンサワー": { english: "Lemon sour", reading: "レモンサワー", category: "Alcohol" },
+  "コーン茶ハイ": { english: "Corn tea high", reading: "コーン茶ハイ", category: "Alcohol" },
+  "ウーロンハイ": { english: "Oolong tea high", reading: "ウーロンハイ", category: "Alcohol" },
   "カシス": { english: "Cassis", reading: "カシス", category: "Alcohol", optionType: "mixer" },
-  "赤": { english: "Red Wine", reading: "アカ", category: "Wine" },
-  "白": { english: "White Wine", reading: "シロ", category: "Wine" },
-  "赤ワイン": { english: "Red Wine", reading: "アカワイン", category: "Wine" },
-  "白ワイン": { english: "White Wine", reading: "シロワイン", category: "Wine" },
-  "オレンジジュース": { english: "Orange Juice", reading: "オレンジジュース", category: "Soft Drinks" },
+  "赤": { english: "Red", reading: "赤", category: "Wine" },
+  "白": { english: "White", reading: "白", category: "Wine" },
+  "赤ワイン": { english: "Red", reading: "赤", category: "Wine" },
+  "白ワイン": { english: "White", reading: "白", category: "Wine" },
+  "オレンジジュース": { english: "Orange", reading: "オレンジ", category: "Soft Drinks" },
   "コーヒー": { english: "Coffee", reading: "コーヒー", category: "Soft Drinks", optionType: "temperature" },
-  "コーン茶": { english: "Corn Tea", reading: "コーンチャ", category: "Soft Drinks", optionType: "temperature" },
-  "ウーロン茶": { english: "Oolong Tea", reading: "ウーロンチャ", category: "Soft Drinks", optionType: "temperature" },
+  "コーン茶": { english: "Corn tea", reading: "コーン茶", category: "Soft Drinks", optionType: "temperature" },
+  "ウーロン茶": { english: "Oolong tea", reading: "ウーロン茶", category: "Soft Drinks", optionType: "temperature" },
 };
 
 const CATEGORY_PRICES: Record<string, number> = {
@@ -57,7 +58,16 @@ const CATEGORY_PRICES: Record<string, number> = {
   "Soft Drinks": 600,
 };
 
+const MENU_ORDER = ["ビール", "ハイボール", "レモンサワー", "コーン茶ハイ", "ウーロンハイ", "カシス", "赤", "白", "赤ワイン", "白ワイン", "オレンジジュース", "コーヒー", "コーン茶", "ウーロン茶"];
 const getMenuPresentation = (name: string) => MENU_PRESENTATION[name];
+
+function MyongaWordmark({ className = "" }: { className?: string }) {
+  return (
+    <span aria-label="myonga" className={`inline-flex items-center whitespace-nowrap ${className}`}>
+      myonga
+    </span>
+  );
+}
 
 type CustomerIconName = "shopping-bag" | "clipboard-list" | "history";
 function CustomerIcon({ name }: { name: CustomerIconName }) {
@@ -76,10 +86,11 @@ export default function Home() {
   const [lastPlacedItems, setLastPlacedItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const [nickname, setNickname] = useState("");
+  const [tableNumber, setTableNumber] = useState<number | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const [nicknameInput, setNicknameInput] = useState("");
+  const [registrationError, setRegistrationError] = useState("");
   const [checkingCustomer, setCheckingCustomer] = useState(true);
+  const nickname = tableNumber ? `卓番 ${String(tableNumber).padStart(2, "0")}` : "卓番未設定";
 
   const [orderHistory, setOrderHistory] = useState<CustomerOrder[]>([]);
   const [checkoutRequested, setCheckoutRequested] = useState(false);
@@ -88,9 +99,6 @@ export default function Home() {
   const [callingStaff, setCallingStaff] = useState(false);
   const [customerTab, setCustomerTab] = useState<"menu" | "orders" | "history">("menu");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [checkoutDisplayOrders, setCheckoutDisplayOrders] = useState<
-    CustomerOrder[]
-  >([]);
 
   // 注文を読み込む + Realtime監視
   useEffect(() => {
@@ -119,22 +127,6 @@ export default function Home() {
       );
 
       setCheckoutRequested(hasCheckoutRequest);
-      if (!hasCheckoutRequest) setCheckoutDisplayOrders([]);
-      if (hasCheckoutRequest) {
-        setCheckoutDisplayOrders(
-          orders
-            .filter((order) => order.checkout_status === "requested")
-            .map((order) => ({
-              id: order.id,
-              status: "pending",
-              checkout_status: order.checkout_status,
-              payment_method: order.payment_method,
-              created_at: order.created_at,
-              checkout_requested_at: order.checkout_requested_at,
-              items: [],
-            }))
-        );
-      }
 
       const orderIds = orders.map((order) => order.id);
 
@@ -161,9 +153,6 @@ export default function Home() {
           items: [],
         }));
         setOrderHistory(emptyItemHistory);
-        if (hasCheckoutRequest) {
-          setCheckoutDisplayOrders(emptyItemHistory.filter((order) => order.checkout_status === "requested"));
-        }
         return;
       }
 
@@ -222,11 +211,6 @@ export default function Home() {
       });
 
       setOrderHistory(history);
-      if (hasCheckoutRequest) {
-        setCheckoutDisplayOrders(
-          history.filter((order) => order.checkout_status === "requested")
-        );
-      }
     };
 
     loadOrderHistory();
@@ -320,6 +304,7 @@ export default function Home() {
     const { error } = await supabase.from("staff_calls").insert({
       customer_id: customerId,
       nickname,
+      table_number: tableNumber,
     });
 
     if (error) {
@@ -350,19 +335,20 @@ export default function Home() {
         (payload) => {
           const updatedCustomer = payload.new as {
             reset_at?: string | null;
+            table_number?: number | null;
           };
 
+          if (updatedCustomer.table_number) setTableNumber(Number(updatedCustomer.table_number));
           if (!updatedCustomer.reset_at) return;
 
           localStorage.removeItem("customer_id");
           setCustomerId(null);
-          setNickname("");
-          setNicknameInput("");
+          setTableNumber(null);
+          setRegistrationError("");
           setOrderHistory([]);
           setCustomerTab("menu");
           setSelectedCategory("All");
           setCheckoutRequested(false);
-          setCheckoutDisplayOrders([]);
           setCart([]);
           setCartOpen(false);
           setOrdered(false);
@@ -376,26 +362,76 @@ export default function Home() {
     };
   }, [customerId]);
 
-  // お客様情報を読み込む
+  // QRコードの卓番、または端末に保存されたセッションを読み込む
   useEffect(() => {
     const loadCustomer = async () => {
-      const savedCustomerId = localStorage.getItem("customer_id");
+      const params = new URLSearchParams(window.location.search);
+      const rawTable = params.get("table");
+      const requestedTable = rawTable && /^\d{1,2}$/.test(rawTable) ? Number(rawTable) : null;
+      const validRequestedTable = requestedTable !== null && requestedTable >= 1 && requestedTable <= 20 ? requestedTable : null;
+      if (rawTable && !validRequestedTable) {
+        setRegistrationError("番号札のQRコードを確認してください。卓番は1〜20です。");
+        setCheckingCustomer(false);
+        return;
+      }
 
+      const savedCustomerId = localStorage.getItem("customer_id");
       if (savedCustomerId) {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, nickname, reset_at")
+          .select("id, table_number, reset_at")
           .eq("id", savedCustomerId)
-          .single();
+          .maybeSingle();
 
         if (!error && data && !data.reset_at) {
-          setCustomerId(data.id);
-          setNickname(data.nickname);
-        } else {
-          localStorage.removeItem("customer_id");
+          if (!validRequestedTable && !data.table_number) {
+            localStorage.removeItem("customer_id");
+          } else if (validRequestedTable && data.table_number && Number(data.table_number) !== validRequestedTable) {
+            setRegistrationError(`この端末は卓番${String(data.table_number).padStart(2, "0")}で登録済みです。スタッフにお声がけください。`);
+            setCheckingCustomer(false);
+            return;
+          }
+          if (validRequestedTable && !data.table_number) {
+            const { error: updateError } = await supabase.from("customers").update({ table_number: validRequestedTable }).eq("id", savedCustomerId);
+            if (updateError) console.error("卓番更新エラー:", updateError);
+          }
+          if (validRequestedTable || data.table_number) {
+            setCustomerId(data.id);
+            setTableNumber(validRequestedTable ?? Number(data.table_number));
+            setCheckingCustomer(false);
+            return;
+          }
         }
+        localStorage.removeItem("customer_id");
       }
 
+      if (!validRequestedTable) {
+        setRegistrationError("番号札のQRコードを読み取ってください。スマートフォンをお持ちでない場合はスタッフにお声がけください。");
+        setCheckingCustomer(false);
+        return;
+      }
+
+      const tableLabel = `卓番 ${String(validRequestedTable).padStart(2, "0")}`;
+      const { data, error } = await supabase
+        .from("customers")
+        .insert({
+          nickname: tableLabel,
+          table_number: validRequestedTable,
+          registration_method: "qr",
+        })
+        .select("id, table_number")
+        .single();
+
+      if (error || !data) {
+        console.error("QR受付エラー:", error);
+        setRegistrationError("受付に失敗しました。通信状況を確認して、スタッフにお声がけください。");
+        setCheckingCustomer(false);
+        return;
+      }
+
+      localStorage.setItem("customer_id", data.id);
+      setCustomerId(data.id);
+      setTableNumber(Number(data.table_number));
       setCheckingCustomer(false);
     };
 
@@ -432,38 +468,6 @@ export default function Home() {
     };
   }, []);
 
-  // お客様登録
-  const registerCustomer = async () => {
-    const name = nicknameInput.trim();
-
-    if (!name) {
-      alert("ニックネームを入力してください");
-      return;
-    }
-
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from("customers")
-      .insert({
-        nickname: name,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error(error);
-      alert("登録に失敗しました");
-      setLoading(false);
-      return;
-    }
-
-    localStorage.setItem("customer_id", data.id);
-
-    setCustomerId(data.id);
-    setNickname(data.nickname);
-    setLoading(false);
-  };
 
   // 商品をカートに追加（オプション別に別行として管理）
   const addToCart = (product: Product, option: string | null = null) => {
@@ -513,22 +517,23 @@ export default function Home() {
 
   const categoryItemCount = products.filter((product) => {
     const presentation = getMenuPresentation(product.name);
-    return Boolean(presentation) && (selectedCategory === "All" || presentation?.category === selectedCategory);
+    const legacyDuplicate = (product.name === "赤ワイン" && products.some((entry) => entry.name === "赤")) || (product.name === "白ワイン" && products.some((entry) => entry.name === "白"));
+    return Boolean(presentation) && !legacyDuplicate && (selectedCategory === "All" || presentation?.category === selectedCategory);
   }).length;
 
   // 現在注文中の注文だけ
   const currentOrders = orderHistory.filter(
     (order) =>
-      (order.checkout_status === "none" || order.checkout_status === null) &&
+      (order.checkout_status === "none" || order.checkout_status === null || order.checkout_status === "requested") &&
       order.items.some(
         (item) => item.cancelled_quantity < item.quantity && item.served_quantity + item.cancelled_quantity < item.quantity
       )
   );
 
-  // 提供済みの注文
+  // 提供完了した注文、または会計済みの注文（未提供確認後に会計した場合も含む）
   const servedOrders = orderHistory.filter((order) =>
     order.items.length > 0 && (
-      order.items.some((item) => item.cancelled_quantity > 0) ||
+      order.checkout_status === "paid" ||
       order.items.every((item) => item.served_quantity + item.cancelled_quantity >= item.quantity)
     )
   );
@@ -550,17 +555,6 @@ export default function Home() {
     0
   );
 
-  // 会計画面に表示する注文
-  const checkoutDisplayTotal = checkoutDisplayOrders.reduce(
-    (sum, order) =>
-      sum +
-      (order.items ?? []).reduce(
-        (orderSum, item) =>
-          orderSum + item.price * (item.quantity - item.cancelled_quantity),
-        0
-      ),
-    0
-  );
 
   // お会計依頼
   const requestCheckout = async (paymentMethod: "cash" | "paypay") => {
@@ -573,20 +567,14 @@ export default function Home() {
 
     const paymentLabel = paymentMethod === "cash" ? "現金" : "PayPay";
     const confirmed = window.confirm(
-      `支払い方法：${paymentLabel}\n\nお会計を依頼しますか？\n会計依頼後は追加注文できなくなります。`
+      `支払い方法：${paymentLabel}\n\nお会計を依頼しますか？\n会計依頼中も追加注文できます。`
     );
 
     if (!confirmed) return;
 
     // 会計依頼前の注文を会計画面用に保存
-    setCheckoutDisplayOrders(
-      checkoutOrders.map((order) => ({
-        ...order,
-        payment_method: paymentMethod,
-      }))
-    );
-
-    const { error } = await supabase
+    const targetOrderIds = checkoutOrders.map((order) => order.id);
+    const { data, error } = await supabase
       .from("orders")
       .update({
         checkout_status: "requested",
@@ -594,11 +582,13 @@ export default function Home() {
         payment_method: paymentMethod,
       })
       .eq("customer_id", customerId)
-      .in("id", checkoutOrders.map((order) => order.id));
+      .in("id", targetOrderIds)
+      .or("checkout_status.eq.none,checkout_status.is.null")
+      .select("id");
 
-    if (error) {
-      console.error(error);
-      alert("お会計の依頼に失敗しました");
+    if (error || !data || data.length !== targetOrderIds.length) {
+      console.error("会計依頼更新エラー:", error);
+      alert("お会計の依頼に失敗しました。注文状態を再読み込みして、もう一度お試しください。");
       return;
     }
 
@@ -612,7 +602,7 @@ export default function Home() {
 
   // 注文する
   const placeOrder = async () => {
-    if (cart.length === 0 || !customerId || checkoutRequested || loading) {
+    if (cart.length === 0 || !customerId || loading) {
       return;
     }
 
@@ -671,7 +661,7 @@ export default function Home() {
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
-        table_number: 0,
+        table_number: tableNumber,
         customer_id: customerId,
         status: "pending",
         checkout_status: "none",
@@ -731,7 +721,7 @@ export default function Home() {
 
   if (checkingCustomer) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
+      <main className="flex min-h-screen items-center justify-center bg-[#16070D] p-6">
         <p className="text-[#F3EDEB]">読み込み中...</p>
       </main>
     );
@@ -739,34 +729,12 @@ export default function Home() {
 
   if (!customerId) {
     return (
-      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
-        <div className="w-full max-w-md rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
-          <h1 className="font-serif text-2xl font-medium text-[#F3EDEB]">
-            myonga
-          </h1>
-
-          <p className="mt-3 text-[#C5B7BA]">
-            ニックネームを入力してください
-          </p>
-
-          <input
-            type="text"
-            value={nicknameInput}
-            onChange={(e) =>
-              setNicknameInput(e.target.value)
-            }
-            placeholder="例：はるき"
-            maxLength={20}
-            className="mt-4 w-full rounded-md border border-[#49323F] bg-[#261D23] p-3 text-[#F3EDEB] outline-none placeholder:text-[#A18F96] focus:border-[#71364F] focus:ring-2 focus:ring-[#71364F]/20"
-          />
-
-          <button
-            onClick={registerCustomer}
-            disabled={loading}
-            className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-3 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F] disabled:opacity-50"
-          >
-            {loading ? "登録中..." : "入店する"}
-          </button>
+      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#16070D] p-6">
+        <div className="w-full max-w-md rounded-md bg-[#261019] p-7 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+          <h1 className="font-serif text-3xl font-medium tracking-[0.18em] text-[#F3EDEB]"><MyongaWordmark /></h1>
+          <p className="mt-5 text-sm leading-7 text-[#C5B7BA]">{registrationError || "番号札のQRコードを読み取ってください。"}</p>
+          <p className="mt-4 text-xs text-[#8F8288]">スマートフォンをお持ちでない場合は、スタッフにお声がけください。</p>
+          <p className="mt-8 text-[9px] tracking-[0.12em] text-[#76515E]">{APP_VERSION}</p>
         </div>
       </main>
     );
@@ -774,18 +742,18 @@ export default function Home() {
 
   if (ordered) {
     return (
-      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#100D10] p-6">
-        <div className="w-full max-w-md rounded-md bg-[#1B151A] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#16070D] p-6">
+        <div className="w-full max-w-md rounded-md bg-[#261019] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
           <h1 className="font-serif text-2xl font-medium text-[#F3EDEB]">
             ご注文を受け付けました
           </h1>
 
           <p className="mt-3 text-[#C5B7BA]">
-            <span className="block">{nickname}様、ご注文ありがとうございます。</span>
-            <span className="mt-1 block text-[10px] tracking-wide text-[#8F8288]">GUEST ID：{customerId?.slice(0, 8)}</span>
+            <span className="block">卓番 {String(tableNumber).padStart(2, "0")} のご注文ありがとうございます。</span>
+            <span className="mt-1 block text-[10px] tracking-wide text-[#8F8288]">ID：{customerId?.slice(0, 8)}</span>
           </p>
 
-          <div className="mt-5 rounded-md border border-[#49323F] bg-[#261D23] p-4 text-left">
+          <div className="mt-5 rounded-md border border-[#6A243D] bg-[#35131F] p-4 text-left">
             <p className="mb-3 text-sm font-semibold text-[#D7B77C]">注文内容</p>
             <div className="space-y-2">
               {lastPlacedItems.map((item) => (
@@ -795,7 +763,7 @@ export default function Home() {
                 </div>
               ))}
             </div>
-            <div className="mt-3 border-t border-[#49323F] pt-3 text-right font-semibold text-[#F3EDEB]">合計 ¥{lastPlacedTotal.toLocaleString("ja-JP")}</div>
+            <div className="mt-3 border-t border-[#6A243D] pt-3 text-right font-semibold text-[#F3EDEB]">合計 ¥{lastPlacedTotal.toLocaleString("ja-JP")}</div>
           </div>
 
           <p className="mt-4 text-sm text-[#C5B7BA]">
@@ -807,7 +775,7 @@ export default function Home() {
               setOrdered(false);
               setCustomerTab("orders");
             }}
-            className="mt-6 w-full rounded-md bg-[#71364F] px-4 py-3 font-semibold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F]"
+            className="mt-6 w-full rounded-md bg-[#A51D43] px-4 py-3 font-semibold text-[#FFF9F5] shadow-sm transition hover:bg-[#C02A52]"
           >
             注文状況を見る
           </button>
@@ -816,139 +784,22 @@ export default function Home() {
     );
   }
 
-  // 会計依頼後の画面
-  if (checkoutRequested) {
-    return (
-      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#100D10] p-6">
-        <div className="mx-auto w-full max-w-md">
-          <div className="rounded-md bg-[#1B151A] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
-            <h1 className="font-serif text-2xl font-medium text-[#F3EDEB]">
-              お会計
-            </h1>
-
-            <p className="mt-2 text-[#C5B7BA]">
-              <span className="mt-3 block text-2xl font-bold text-[#F3EDEB]">{nickname} 様</span>
-              <span className="mt-1 block text-[10px] tracking-wide text-[#8F8288]">GUEST ID：{customerId?.slice(0, 8)}</span>
-            </p>
-
-            <div className="mt-5 rounded-md bg-[#261D23] p-4 text-center">
-              <p className="font-bold text-[#D7B77C]">
-                お会計を承りました
-              </p>
-
-              <p className="mt-1 text-sm text-[#C5B7BA]">
-                お会計時にこの画面を表示してレジまでお越しください
-              </p>
-            </div>
-
-            <div className="mt-4 rounded-md border border-[#49323F] bg-[#261D23] p-3 text-center">
-              <p className="text-sm text-[#A18F96]">お支払い方法</p>
-              <p className="mt-1 font-bold text-[#F3EDEB]">
-                {checkoutDisplayOrders[0]?.payment_method === "cash"
-                  ? "現金"
-                  : checkoutDisplayOrders[0]?.payment_method === "paypay"
-                    ? "PayPay"
-                    : "未設定"}
-              </p>
-            </div>
-
-            <div className="mt-6">
-              <h2 className="font-serif text-lg font-medium text-[#F3EDEB]">
-                ご注文履歴
-              </h2>
-
-              <div className="mt-4 space-y-4">
-                {checkoutDisplayOrders.map((order) => {
-                  const orderDate = formatOrderDate(
-                    order.created_at
-                  );
-
-                  const currentOrderTotal =
-                    (order.items ?? []).reduce(
-                      (sum, item) =>
-                        sum + item.price * (item.quantity - item.cancelled_quantity),
-                      0
-                    );
-
-                  return (
-                    <div
-                      key={order.id}
-                      className="rounded-md border border-[#49323F] bg-[#261D23] p-4"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex flex-wrap gap-2">
-                            <span className="rounded-sm bg-[#1B151A] px-2.5 py-1 text-sm text-[#F3EDEB]">{orderDate.date}</span>
-                            <span className="rounded-sm bg-[#1B151A] px-2.5 py-1 text-sm text-[#F3EDEB]">{orderDate.time}</span>
-                          </div>
-
-                          <p className="mt-1 text-sm text-[#C5B7BA]">
-                            注文ID：{order.id}
-                          </p>
-                        </div>
-
-                        <span className="text-sm font-bold text-[#F3EDEB]">
-                          ¥{currentOrderTotal.toLocaleString("en-US")}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 space-y-2">
-                        {order.items.map((item, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center justify-between text-[#F3EDEB]"
-                          >
-                            <span>
-                              {getMenuPresentation(item.productName)?.english ?? item.productName}{item.option ? ` · ${item.option.toUpperCase()}` : ""} ×{" "}
-                              {item.quantity}
-                              {item.cancelled_quantity > 0 ? `（キャンセル ${item.cancelled_quantity}）` : ""}
-                            </span>
-
-                            <span>
-                              ¥{(item.price * (item.quantity - item.cancelled_quantity)).toLocaleString("en-US")}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mt-6 border-t border-[#49323F] pt-5">
-              <div className="flex items-center justify-between text-2xl font-bold text-[#F3EDEB]">
-                <span>お会計合計</span>
-                <span>¥{checkoutDisplayTotal.toLocaleString("en-US")}</span>
-              </div>
-            </div>
-
-            <p className="mt-5 text-center text-sm text-[#A18F96]">
-              お会計が完了するまで追加注文はできません。
-            </p>
-          </div>
-        </div>
-      </main>
-    );
-  }
 
   return (
-    <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#100D10] p-6 pb-28">
+    <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="min-h-screen bg-[#16070D] p-6 pb-28">
       <div className="mx-auto w-full max-w-md">
-        <h1 className="font-serif text-3xl font-medium tracking-[0.22em] text-[#F3EDEB]">
-          myonga
-        </h1>
+        <h1 className="font-serif text-3xl font-medium tracking-[0.16em] text-[#F3EDEB]"><MyongaWordmark /></h1>
 
-        <p className="mt-2 text-sm tracking-wide text-[#C5B7BA]">{nickname} 様</p>
-        <p className="mt-0.5 text-[10px] tracking-wide text-[#8F8288]">GUEST ID：{customerId?.slice(0, 8)}</p>
+        <p className="mt-2 text-sm tracking-wide text-[#C5B7BA]">卓番 {String(tableNumber).padStart(2, "0")}</p>
+        <p className="mt-0.5 text-[10px] tracking-wide text-[#8F8288]">ID：{customerId?.slice(0, 8)}</p>
 
         <button
           onClick={callStaff}
           disabled={callingStaff || staffCallPending}
-          className={`mt-4 w-full rounded-md border border-[#A9785D]/50 px-4 py-3 font-semibold tracking-wide transition ${
+          className={`mt-4 w-full rounded-md border border-[#C65A73]/50 px-4 py-3 font-semibold tracking-wide transition ${
             staffCallPending
-              ? "bg-[#382832] text-[#C5B7BA]"
-              : "bg-[#71364F] text-[#FFF9F5] hover:bg-[#87445F]"
+              ? "bg-[#4A182A] text-[#C5B7BA]"
+              : "bg-[#A51D43] text-[#FFF9F5] hover:bg-[#C02A52]"
           } disabled:cursor-not-allowed disabled:opacity-80`}
         >
           <span className="inline-flex items-center justify-center gap-2">
@@ -964,9 +815,15 @@ export default function Home() {
             スタッフが対応を完了すると、もう一度呼び出せます。
           </p>
         )}
+        {checkoutRequested && (
+          <div className="mt-3 rounded-md border border-[#9A2444]/60 bg-[#3A1422] p-3">
+            <p className="text-sm font-semibold text-[#F4DDE4]">お会計依頼中</p>
+            <p className="mt-1 text-xs leading-5 text-[#D8B9C3]">お会計時にこの画面を表示してレジまでお越しください。追加注文も引き続きご利用いただけます。</p>
+          </div>
+        )}
 
         {/* メインタブ */}
-        <nav className="mt-7 grid grid-cols-3 gap-2 rounded-md border border-[#49323F] bg-[#1B151A] p-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
+        <nav className="mt-7 grid grid-cols-3 gap-2 rounded-md border border-[#6A243D] bg-[#261019] p-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
           {([
             ["menu", "メニュー", "shopping-bag"],
             ["orders", "注文状況", "clipboard-list"],
@@ -977,13 +834,13 @@ export default function Home() {
               onClick={() => setCustomerTab(tab)}
               className={`relative rounded-md px-2 py-3 text-sm font-bold tracking-wide transition ${
                 customerTab === tab
-                  ? "bg-[#71364F] text-[#FFF9F5] shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
-                  : "text-[#C5B7BA] hover:bg-[#382832]"
+                  ? "bg-[#A51D43] text-[#FFF9F5] shadow-[0_4px_14px_rgba(0,0,0,0.25)]"
+                  : "text-[#C5B7BA] hover:bg-[#4A182A]"
               }`}
             >
               <span className="inline-flex items-center justify-center gap-1.5"><CustomerIcon name={iconName} />{label}</span>
               {tab === "orders" && currentOrders.length > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#1B151A] bg-[#C83D4D] px-1 text-[10px] font-black text-white">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#261019] bg-[#C83D4D] px-1 text-[10px] font-black text-white">
                   {currentOrders.length > 99 ? "99+" : currentOrders.length}
                 </span>
               )}
@@ -1002,7 +859,15 @@ export default function Home() {
             </div>
 
             {(() => {
-              const catalogProducts = products.filter((product) => Boolean(getMenuPresentation(product.name)));
+              const menuProducts = products.filter((product) => Boolean(getMenuPresentation(product.name)));
+              const menuNames = new Set(menuProducts.map((product) => product.name));
+              const catalogProducts = menuProducts
+                .filter((product) => {
+                  if (product.name === "赤ワイン" && menuNames.has("赤")) return false;
+                  if (product.name === "白ワイン" && menuNames.has("白")) return false;
+                  return true;
+                })
+                .sort((a, b) => MENU_ORDER.indexOf(a.name) - MENU_ORDER.indexOf(b.name));
               const categories = ["All", "Alcohol", "Wine", "Soft Drinks"];
               const visibleProducts = selectedCategory === "All"
                 ? catalogProducts
@@ -1016,8 +881,8 @@ export default function Home() {
                         onClick={() => setSelectedCategory(category)}
                         className={`shrink-0 rounded-md border px-4 py-2 text-sm font-semibold transition ${
                           selectedCategory === category
-                            ? "border-[#D7B77C] bg-[#382832] text-[#F3D9AE]"
-                            : "border-[#49323F] bg-[#1B151A] text-[#C5B7BA] hover:bg-[#382832]"
+                            ? "border-[#D7B77C] bg-[#4A182A] text-[#F3D9AE]"
+                            : "border-[#6A243D] bg-[#261019] text-[#C5B7BA] hover:bg-[#4A182A]"
                         }`}
                       >
                         {category}
@@ -1030,7 +895,7 @@ export default function Home() {
                       if (categoryProducts.length === 0) return null;
                       return (
                         <section key={category} className="space-y-3">
-                          <div className="flex items-baseline justify-between border-b border-[#49323F] pb-3 pt-2">
+                          <div className="flex items-baseline justify-between border-b border-[#6A243D] pb-3 pt-2">
                             <span className="font-serif text-lg font-medium tracking-normal text-[#F3EDEB]">{category}</span>
                             <span className="text-sm tracking-wide text-[#D7B77C]">¥{CATEGORY_PRICES[category].toLocaleString("en-US")}</span>
                           </div>
@@ -1042,20 +907,20 @@ export default function Home() {
                                 ? "Orange / Soda"
                                 : null;
                             return (
-                              <article key={product.id} className="rounded-md border border-[#49323F] bg-gradient-to-br from-[#261D23] to-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
+                              <article key={product.id} className="rounded-md border border-[#6A243D] bg-gradient-to-br from-[#35131F] to-[#261019] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="min-w-0">
                                     <p className="mb-0.5 text-xs tracking-[0.12em] text-[#B8A8AD]">{presentation.reading}</p>
                                     <p className="font-sans text-lg font-medium tracking-normal text-[#F3EDEB]">{presentation.english}</p>
                                     {optionHint && <p className="mt-1 text-[11px] tracking-wide text-[#A18F96]">{optionHint}</p>}
-                                    {!product.is_available && <p className="mt-1 text-xs font-semibold tracking-wide text-[#F08A91]">SOLD OUT</p>}
+                                    {!product.is_available && <p className="mt-1 text-xs font-semibold tracking-wide text-[#F08A91]">売り切れ</p>}
                                   </div>
                                   <button
                                     onClick={() => presentation.optionType ? setOptionProduct(product) : addToCart(product)}
                                     disabled={!product.is_available}
-                                    className="shrink-0 rounded-md border border-[#A9785D]/60 bg-[#71364F] px-4 py-2.5 text-sm font-semibold tracking-wide text-[#FFF9F5] transition hover:bg-[#87445F] active:scale-[0.98] disabled:cursor-not-allowed disabled:border-[#49323F] disabled:bg-[#382832] disabled:text-[#A18F96]"
+                                    className="shrink-0 rounded-md border border-[#C65A73]/60 bg-[#A51D43] px-4 py-2.5 text-sm font-semibold tracking-wide text-[#FFF9F5] transition hover:bg-[#C02A52] active:scale-[0.98] disabled:cursor-not-allowed disabled:border-[#6A243D] disabled:bg-[#4A182A] disabled:text-[#A18F96]"
                                   >
-                                    {product.is_available ? "＋ Add" : "Unavailable"}
+                                    {product.is_available ? "＋ 追加" : "売り切れ"}
                                   </button>
                                 </div>
                               </article>
@@ -1065,7 +930,7 @@ export default function Home() {
                       );
                     })}
                     {visibleProducts.length === 0 && (
-                      <div className="rounded-md border border-dashed border-[#49323F] bg-[#1B151A] p-8 text-center text-sm text-[#A18F96]">
+                      <div className="rounded-md border border-dashed border-[#6A243D] bg-[#261019] p-8 text-center text-sm text-[#A18F96]">
                         このカテゴリの商品はありません。
                       </div>
                     )}
@@ -1084,7 +949,7 @@ export default function Home() {
               <h2 className="mt-1 font-serif text-2xl font-medium tracking-wide text-[#F3EDEB]">Your Orders</h2>
             </div>
             {currentOrders.length === 0 ? (
-              <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center">
+              <div className="rounded-md border border-[#6A243D] bg-[#261019] p-7 text-center">
                 <p className="text-sm text-[#C5B7BA]">現在、提供待ちのご注文はありません。</p>
               </div>
             ) : (
@@ -1096,20 +961,20 @@ export default function Home() {
                   const allItemsServed = activeItems.length === 0;
                   const someItemsServed = order.items.some((item) => item.served_quantity > 0);
                   return (
-                    <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
+                    <article key={order.id} className="rounded-md border border-[#6A243D] bg-[#261019] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex flex-wrap gap-2">
-                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.date}</span>
-                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.time}</span>
+                            <span className="rounded-sm bg-[#35131F] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.date}</span>
+                            <span className="rounded-sm bg-[#35131F] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.time}</span>
                           </div>
                           <p className="mt-1 text-xs text-[#A18F96]">注文番号 #{order.id}</p>
                         </div>
-                        <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-xs font-bold text-[#D7B77C]">
+                        <span className="rounded-full border border-[#C65A73]/50 bg-[#4A182A] px-3 py-1 text-xs font-bold text-[#D7B77C]">
                           {allItemsServed ? "提供済み" : someItemsServed ? "一部提供" : "提供待ち"}
                         </span>
                       </div>
-                      <div className="mt-4 space-y-3 border-t border-[#49323F] pt-4">
+                      <div className="mt-4 space-y-3 border-t border-[#6A243D] pt-4">
                         {order.items.map((item, index) => {
                           const served = item.served_quantity;
                           const fullyServed = served + item.cancelled_quantity >= item.quantity;
@@ -1118,7 +983,7 @@ export default function Home() {
                             <div key={index} className="flex items-center justify-between gap-3 text-sm">
                               <span className={item.cancelled_quantity > 0 ? "text-[#A18F96]" : fullyServed ? "text-[#D7B77C]" : "text-[#F3EDEB]"}>
                                 {getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}
-                                {item.option && <span className="ml-2 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
+                                {item.option && <span className="ml-2 inline-flex rounded-sm border border-[#C65A73]/60 bg-[#4A182A] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
                               </span>
                               <span className="shrink-0 text-right text-xs font-semibold text-[#C5B7BA]">
                                 {item.cancelled_quantity >= item.quantity ? "キャンセル済み" : item.cancelled_quantity > 0 ? `${item.cancelled_quantity}点キャンセル・${served}点提供済み` : fullyServed ? "提供済み" : partiallyServed ? `${served} / ${item.quantity} 提供済み` : `0 / ${item.quantity} 提供待ち`}
@@ -1127,7 +992,7 @@ export default function Home() {
                           );
                         })}
                       </div>
-                      <div className="mt-4 border-t border-[#49323F] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("en-US")}</div>
+                      <div className="mt-4 border-t border-[#6A243D] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("en-US")}</div>
                     </article>
                   );
                 })}
@@ -1146,28 +1011,28 @@ export default function Home() {
               <h2 className="mt-1 font-serif text-2xl font-medium tracking-wide text-[#F3EDEB]">Order History</h2>
             </div>
             {servedOrders.length === 0 ? (
-              <div className="rounded-md border border-[#49323F] bg-[#1B151A] p-7 text-center text-sm text-[#A18F96]">提供済みのご注文はまだありません。</div>
+              <div className="rounded-md border border-[#6A243D] bg-[#261019] p-7 text-center text-sm text-[#A18F96]">提供済みのご注文はまだありません。</div>
             ) : (
               <div className="space-y-4">
                 {[...servedOrders].reverse().map((order) => {
                   const orderDate = formatOrderDate(order.created_at);
                   const currentOrderTotal = order.items.reduce((sum, item) => sum + item.price * (item.quantity - item.cancelled_quantity), 0);
                   return (
-                    <article key={order.id} className="rounded-md border border-[#49323F] bg-[#1B151A] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
+                    <article key={order.id} className="rounded-md border border-[#6A243D] bg-[#261019] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.22)]">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="flex flex-wrap gap-2">
-                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.date}</span>
-                            <span className="rounded-sm bg-[#261D23] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.time}</span>
+                            <span className="rounded-sm bg-[#35131F] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.date}</span>
+                            <span className="rounded-sm bg-[#35131F] px-2.5 py-1 text-sm font-medium text-[#F3EDEB]">{orderDate.time}</span>
                           </div>
                           <p className="mt-1 text-xs text-[#A18F96]">注文番号 #{order.id}</p>
                         </div>
-                        <span className="rounded-full border border-[#A9785D]/50 bg-[#382832] px-3 py-1 text-xs font-bold text-[#D7B77C]">{order.items.every((item) => item.cancelled_quantity >= item.quantity) ? "キャンセル済み" : order.items.some((item) => item.cancelled_quantity > 0) ? "キャンセル商品あり" : "提供済み"}</span>
+                        <span className="rounded-full border border-[#C65A73]/50 bg-[#4A182A] px-3 py-1 text-xs font-bold text-[#D7B77C]">{order.items.every((item) => item.cancelled_quantity >= item.quantity) ? "キャンセル済み" : order.items.some((item) => item.cancelled_quantity > 0) ? "キャンセル商品あり" : "提供済み"}</span>
                       </div>
-                      <div className="mt-4 space-y-2 border-t border-[#49323F] pt-4">
+                      <div className="mt-4 space-y-2 border-t border-[#6A243D] pt-4">
                         {order.items.map((item, index) => (
                           <div key={index} className="flex items-center justify-between gap-3 text-sm text-[#F3EDEB]">
-                            <span className={item.cancelled_quantity > 0 ? "text-[#A18F96] line-through" : ""}>{getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}{item.option && <span className="ml-2 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
+                            <span className={item.cancelled_quantity > 0 ? "text-[#A18F96] line-through" : ""}>{getMenuPresentation(item.productName)?.english ?? item.productName} × {item.quantity}{item.option && <span className="ml-2 inline-flex rounded-sm border border-[#C65A73]/60 bg-[#4A182A] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
                               {item.cancelled_quantity > 0 && <span className="ml-2 text-xs font-semibold text-[#F08A91] no-underline">{item.cancelled_quantity >= item.quantity ? "キャンセル済み" : `一部キャンセル（${item.cancelled_quantity}点）`}</span>}</span>
                             <span className="shrink-0 text-right text-xs text-[#C5B7BA]">
                               ¥{(item.price * (item.quantity - item.cancelled_quantity)).toLocaleString("en-US")}
@@ -1176,7 +1041,7 @@ export default function Home() {
                           </div>
                         ))}
                       </div>
-                      <div className="mt-4 border-t border-[#49323F] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("en-US")}</div>
+                      <div className="mt-4 border-t border-[#6A243D] pt-3 text-right font-semibold text-[#D7B77C]">¥{currentOrderTotal.toLocaleString("en-US")}</div>
                     </article>
                   );
                 })}
@@ -1187,7 +1052,7 @@ export default function Home() {
 
         {showPaymentModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5">
-            <div className="w-full max-w-sm rounded-md border border-[#49323F] bg-[#1B151A] p-5 shadow-2xl">
+            <div className="w-full max-w-sm rounded-md border border-[#6A243D] bg-[#261019] p-5 shadow-2xl">
               <h2 className="text-xl font-black text-[#F3EDEB]">
                 お支払い方法
               </h2>
@@ -1197,20 +1062,20 @@ export default function Home() {
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <button
                   onClick={() => requestCheckout("cash")}
-                  className="rounded-md bg-[#382832] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#49323F]"
+                  className="rounded-md bg-[#4A182A] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#6A243D]"
                 >
                   現金
                 </button>
                 <button
                   onClick={() => requestCheckout("paypay")}
-                  className="rounded-md bg-[#382832] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#49323F]"
+                  className="rounded-md bg-[#4A182A] px-4 py-5 font-bold text-[#F3EDEB] transition hover:bg-[#6A243D]"
                 >
                   PayPay
                 </button>
               </div>
               <button
                 onClick={() => setShowPaymentModal(false)}
-                className="mt-4 w-full rounded-md border border-[#49323F] px-4 py-3 font-bold text-[#C5B7BA] transition hover:bg-[#261D23]"
+                className="mt-4 w-full rounded-md border border-[#6A243D] px-4 py-3 font-bold text-[#C5B7BA] transition hover:bg-[#35131F]"
               >
                 戻る
               </button>
@@ -1225,14 +1090,14 @@ export default function Home() {
       <div className="fixed bottom-4 left-4 right-4 z-40 mx-auto flex max-w-md gap-2">
         <button
           onClick={() => setCartOpen(true)}
-          className={`${checkoutOrders.length > 0 ? "flex-1" : "w-full"} rounded-md border border-[#A9785D]/50 bg-[#382832] px-4 py-4 font-semibold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#49323F] active:scale-[0.99]`}
+          className={`${checkoutOrders.length > 0 ? "flex-1" : "w-full"} rounded-md border border-[#C65A73]/50 bg-[#4A182A] px-4 py-4 font-semibold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#6A243D] active:scale-[0.99]`}
         >
           カート{cartQuantity > 0 ? ` ・ ${cartQuantity}点 ・ ¥${total.toLocaleString("ja-JP")}` : "を見る"}
         </button>
         {checkoutOrders.length > 0 && (
           <button
             onClick={() => setShowPaymentModal(true)}
-            className="flex-1 rounded-md bg-[#71364F] px-4 py-4 font-semibold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#87445F] active:scale-[0.99]"
+            className="flex-1 rounded-md bg-[#A51D43] px-4 py-4 font-semibold text-[#FFF9F5] shadow-[0_8px_24px_rgba(0,0,0,0.4)] transition hover:bg-[#C02A52] active:scale-[0.99]"
           >
             お会計へ ・ ¥{orderTotal.toLocaleString("ja-JP")}
           </button>
@@ -1242,16 +1107,16 @@ export default function Home() {
       {/* 商品オプション選択 */}
       {optionProduct && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0A080B]/75 p-4 sm:items-center">
-          <div className="w-full max-w-md rounded-md border border-[#49323F] bg-[#1B151A] p-5 shadow-2xl">
+          <div className="w-full max-w-md rounded-md border border-[#6A243D] bg-[#261019] p-5 shadow-2xl">
             <p className="text-[10px] tracking-[0.2em] text-[#D7B77C]">SELECT OPTION</p>
             <h2 className="mt-1 font-sans text-2xl text-[#F3EDEB]">{getMenuPresentation(optionProduct.name)?.english}</h2>
             <p className="mt-1 text-xs text-[#A18F96]">{getMenuPresentation(optionProduct.name)?.reading}</p>
             <div className="mt-5 grid grid-cols-2 gap-3">
               {(getMenuPresentation(optionProduct.name)?.optionType === "temperature" ? ["Hot", "Ice"] : ["Orange", "Soda"]).map((option) => (
-                <button key={option} onClick={() => addToCart(optionProduct, option)} className="rounded-md border border-[#A9785D]/60 bg-[#382832] px-4 py-4 font-sans text-lg text-[#F3EDEB] transition hover:bg-[#49323F]">{option}</button>
+                <button key={option} onClick={() => addToCart(optionProduct, option)} className="rounded-md border border-[#C65A73]/60 bg-[#4A182A] px-4 py-4 font-sans text-lg text-[#F3EDEB] transition hover:bg-[#6A243D]">{option}</button>
               ))}
             </div>
-            <button onClick={() => setOptionProduct(null)} className="mt-4 w-full rounded-md border border-[#49323F] px-4 py-3 text-sm text-[#C5B7BA]">戻る</button>
+            <button onClick={() => setOptionProduct(null)} className="mt-4 w-full rounded-md border border-[#6A243D] px-4 py-3 text-sm text-[#C5B7BA]">戻る</button>
           </div>
         </div>
       )}
@@ -1259,7 +1124,7 @@ export default function Home() {
       {/* カート */}
       {cartOpen && (
         <div className="fixed inset-0 z-50 bg-[#0A080B]/70">
-          <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-md rounded-t-2xl bg-[#1B151A] p-5 shadow-2xl">
+          <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-md rounded-t-2xl bg-[#261019] p-5 shadow-2xl">
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-xl font-medium text-[#F3EDEB]">
                 カート
@@ -1267,7 +1132,7 @@ export default function Home() {
 
               <button
                 onClick={() => setCartOpen(false)}
-                className="rounded-md bg-[#382832] px-3 py-2 text-lg text-[#F3EDEB]"
+                className="rounded-md bg-[#4A182A] px-3 py-2 text-lg text-[#F3EDEB]"
               >
                 ✕
               </button>
@@ -1283,14 +1148,14 @@ export default function Home() {
                   {cart.map((item) => (
                     <div
                       key={`${item.id}-${item.option ?? "default"}`}
-                      className="border-b border-[#49323F] pb-4"
+                      className="border-b border-[#6A243D] pb-4"
                     >
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-bold text-[#F3EDEB]">
                             {getMenuPresentation(item.name)?.english ?? item.name}
                           </p>
-                          {item.option && <span className="mt-1 inline-flex rounded-sm border border-[#A9785D]/60 bg-[#382832] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
+                          {item.option && <span className="mt-1 inline-flex rounded-sm border border-[#C65A73]/60 bg-[#4A182A] px-2 py-0.5 text-[11px] font-bold text-[#F3D9AE]">{item.option.toUpperCase()}</span>}
 
                           <p className="text-sm text-[#C5B7BA]">
                             ¥{item.price.toLocaleString("en-US")} ×{" "}
@@ -1312,7 +1177,7 @@ export default function Home() {
                               -1
                             )
                           }
-                          className="h-10 w-10 rounded-md bg-[#382832] text-xl font-bold text-[#F3EDEB]"
+                          className="h-10 w-10 rounded-md bg-[#4A182A] text-xl font-bold text-[#F3EDEB]"
                         >
                           −
                         </button>
@@ -1329,7 +1194,7 @@ export default function Home() {
                               1
                             )
                           }
-                          className="h-10 w-10 rounded-md bg-[#382832] text-xl font-bold text-[#F3EDEB]"
+                          className="h-10 w-10 rounded-md bg-[#4A182A] text-xl font-bold text-[#F3EDEB]"
                         >
                           ＋
                         </button>
@@ -1338,7 +1203,7 @@ export default function Home() {
                   ))}
                 </div>
 
-                <div className="mt-5 border-t border-[#49323F] pt-4">
+                <div className="mt-5 border-t border-[#6A243D] pt-4">
                   <div className="flex items-center justify-between text-xl font-bold text-[#F3EDEB]">
                     <span>合計</span>
                     <span>¥{total.toLocaleString("en-US")}</span>
@@ -1347,7 +1212,7 @@ export default function Home() {
                   <button
                     onClick={placeOrder}
                     disabled={loading}
-                    className="mt-4 w-full rounded-md bg-[#71364F] px-4 py-4 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#87445F] disabled:opacity-50"
+                    className="mt-4 w-full rounded-md bg-[#A51D43] px-4 py-4 font-bold text-[#FFF9F5] shadow-sm transition hover:bg-[#C02A52] disabled:opacity-50"
                   >
                     {loading
                       ? "注文中..."
@@ -1359,6 +1224,7 @@ export default function Home() {
           </div>
         </div>
       )}
+      <footer className="mt-10 pb-2 text-center text-[9px] tracking-[0.14em] text-[#76515E]">{APP_VERSION}</footer>
     </main>
   );
 }
