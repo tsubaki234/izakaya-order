@@ -94,6 +94,7 @@ export default function Home() {
 
   const [orderHistory, setOrderHistory] = useState<CustomerOrder[]>([]);
   const [checkoutRequested, setCheckoutRequested] = useState(false);
+  const [checkoutCompleted, setCheckoutCompleted] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [staffCallPending, setStaffCallPending] = useState(false);
   const [callingStaff, setCallingStaff] = useState(false);
@@ -335,10 +336,12 @@ export default function Home() {
         (payload) => {
           const updatedCustomer = payload.new as {
             reset_at?: string | null;
+            checkout_completed_at?: string | null;
             table_number?: number | null;
           };
 
           if (updatedCustomer.table_number) setTableNumber(Number(updatedCustomer.table_number));
+          if (updatedCustomer.checkout_completed_at) setCheckoutCompleted(true);
           if (!updatedCustomer.reset_at) return;
 
           localStorage.removeItem("customer_id");
@@ -349,6 +352,7 @@ export default function Home() {
           setCustomerTab("menu");
           setSelectedCategory("All");
           setCheckoutRequested(false);
+          setCheckoutCompleted(false);
           setCart([]);
           setCartOpen(false);
           setOrdered(false);
@@ -379,7 +383,7 @@ export default function Home() {
       if (savedCustomerId) {
         const { data, error } = await supabase
           .from("customers")
-          .select("id, table_number, reset_at")
+          .select("id, table_number, reset_at, checkout_completed_at")
           .eq("id", savedCustomerId)
           .maybeSingle();
 
@@ -398,6 +402,7 @@ export default function Home() {
           if (validRequestedTable || data.table_number) {
             setCustomerId(data.id);
             setTableNumber(validRequestedTable ?? Number(data.table_number));
+            setCheckoutCompleted(Boolean(data.checkout_completed_at));
             setCheckingCustomer(false);
             return;
           }
@@ -602,7 +607,7 @@ export default function Home() {
 
   // 注文する
   const placeOrder = async () => {
-    if (cart.length === 0 || !customerId || loading) {
+    if (cart.length === 0 || !customerId || loading || checkoutCompleted) {
       return;
     }
 
@@ -657,39 +662,24 @@ export default function Home() {
       return;
     }
 
-    // すべて販売中なら注文登録
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .insert({
-        table_number: tableNumber,
-        customer_id: customerId,
-        status: "pending",
-        checkout_status: "none",
-      })
-      .select()
-      .single();
+    // 注文と商品明細をDB側の単一トランザクションで登録する
+    const { error: orderError } = await supabase.rpc("create_customer_order", {
+      p_customer_id: customerId,
+      p_items: cart.map((item) => ({
+        product_id: item.id,
+        quantity: item.quantity,
+        option: item.option,
+      })),
+    });
 
     if (orderError) {
       console.error(orderError);
-      alert("注文に失敗しました");
-      setLoading(false);
-      return;
-    }
-
-    const items = cart.map((item) => ({
-      order_id: order.id,
-      product_id: item.id,
-      quantity: item.quantity,
-      option: item.option,
-    }));
-
-    const { error: itemsError } = await supabase
-      .from("order_items")
-      .insert(items);
-
-    if (itemsError) {
-      console.error(itemsError);
-      alert("注文内容の登録に失敗しました");
+      const message = String(orderError.message ?? "");
+      alert(message.includes("session is closed")
+        ? "この端末は会計済みです。追加注文する場合はスタッフにお声がけください。"
+        : message.includes("unavailable")
+          ? "売り切れの商品が含まれています。メニューを更新して、もう一度お試しください。"
+          : "注文に失敗しました");
       setLoading(false);
       return;
     }
@@ -734,6 +724,19 @@ export default function Home() {
           <h1 className="font-serif text-3xl font-medium tracking-[0.18em] text-[#F3EDEB]"><MyongaWordmark /></h1>
           <p className="mt-5 text-sm leading-7 text-[#C5B7BA]">{registrationError || "番号札のQRコードを読み取ってください。"}</p>
           <p className="mt-4 text-xs text-[#8F8288]">スマートフォンをお持ちでない場合は、スタッフにお声がけください。</p>
+          <p className="mt-8 text-[9px] tracking-[0.12em] text-[#76515E]">{APP_VERSION}</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (checkoutCompleted) {
+    return (
+      <main style={{ fontFamily: '"Avenir Next", Avenir, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif' }} className="flex min-h-screen items-center justify-center bg-[#16070D] p-6">
+        <div className="w-full max-w-md rounded-md bg-[#261019] p-8 text-center shadow-[0_10px_30px_rgba(0,0,0,0.3)]">
+          <h1 className="font-serif text-3xl font-medium tracking-[0.16em] text-[#F3EDEB]"><MyongaWordmark /></h1>
+          <p className="mt-7 text-xl font-semibold text-[#F3EDEB]">お会計が完了しました</p>
+          <p className="mt-3 text-sm leading-7 text-[#C5B7BA]">ご利用ありがとうございました。<br />この端末では追加注文を受け付けていません。<br />ご用の際はスタッフにお声がけください。</p>
           <p className="mt-8 text-[9px] tracking-[0.12em] text-[#76515E]">{APP_VERSION}</p>
         </div>
       </main>

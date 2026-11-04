@@ -52,6 +52,7 @@ type CustomerSession = {
   table_number: number | null;
   registration_method: string | null;
   created_at: string;
+  checkout_completed_at: string | null;
 };
 
 type ProxyCartItem = {
@@ -248,7 +249,7 @@ export default function AdminPage() {
     const loadCustomers = async () => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, table_number, registration_method, created_at")
+        .select("id, table_number, registration_method, created_at, checkout_completed_at")
         .is("reset_at", null)
         .order("created_at", { ascending: true });
       if (error) {
@@ -654,29 +655,26 @@ export default function AdminPage() {
       alert("卓番が未設定です。先に卓番を設定してください。");
       return;
     }
-    setSubmittingProxyOrder(true);
-    const { data: order, error: orderError } = await supabase.from("orders").insert({
-      table_number: customer.table_number,
-      customer_id: proxyOrderCustomerId,
-      status: "pending",
-      checkout_status: "none",
-    }).select("id").single();
-    if (orderError || !order) {
-      console.error("代理注文作成エラー:", orderError);
-      alert("代理注文を作成できませんでした。");
-      setSubmittingProxyOrder(false);
+    if (customer.checkout_completed_at) {
+      alert("この端末は会計済みです。端末をリセットしてから注文してください。");
       return;
     }
-    const { error: itemsError } = await supabase.from("order_items").insert(proxyCart.map((item) => ({
-      order_id: order.id,
-      product_id: item.product.id,
-      quantity: item.quantity,
-      option: item.option,
-    })));
-    if (itemsError) {
-      console.error("代理注文商品登録エラー:", itemsError);
-      await supabase.from("orders").delete().eq("id", order.id);
-      alert("代理注文の商品登録に失敗しました。注文を取り消しました。");
+    setSubmittingProxyOrder(true);
+    const { error: orderError } = await supabase.rpc("create_customer_order", {
+      p_customer_id: proxyOrderCustomerId,
+      p_items: proxyCart.map((item) => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+        option: item.option,
+      })),
+    });
+    if (orderError) {
+      console.error("代理注文作成エラー:", orderError);
+      alert(orderError.message?.includes("session is closed")
+        ? "この端末は会計済みです。端末をリセットしてから注文してください。"
+        : orderError.message?.includes("unavailable")
+          ? "売り切れの商品が含まれています。商品一覧を更新してください。"
+          : "代理注文を作成できませんでした。");
       setSubmittingProxyOrder(false);
       return;
     }
@@ -927,6 +925,9 @@ export default function AdminPage() {
       return;
     }
     setOrders((current) => current.filter((order) => order.customer_id !== customerId));
+    setCustomerSessions((current) => current.map((customer) => customer.id === customerId
+      ? { ...customer, checkout_completed_at: new Date().toISOString() }
+      : customer));
     setCheckoutPaymentCustomerId(null);
     setExpandedCheckoutCustomerId(null);
     alert(`会計を完了しました。\\n確定金額：¥${Number(data ?? 0).toLocaleString("ja-JP")}`);
@@ -997,7 +998,7 @@ export default function AdminPage() {
       nickname: label,
       table_number: number,
       registration_method: "staff",
-    }).select("id, table_number, registration_method, created_at").single();
+    }).select("id, table_number, registration_method, created_at, checkout_completed_at").single();
     if (error || !data) {
       console.error("手動端末登録エラー:", error);
       alert("端末登録に失敗しました。");
@@ -1117,15 +1118,17 @@ export default function AdminPage() {
       customer_id: customer.id,
       table_number: customer.table_number,
       registration_method: customer.registration_method,
+      checkout_completed_at: customer.checkout_completed_at,
       orderCount: customerOrders.length,
       orders: customerOrders,
       itemCount: customerOrders.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0),
     };
   }).sort((a, b) => (a.table_number ?? 99) - (b.table_number ?? 99));
 
+  const normalOrders = orders.filter((order) => order.checkout_status !== "requested");
   const visibleOrders = selectedCustomerId
-    ? orders.filter((order) => order.customer_id === selectedCustomerId)
-    : orders;
+    ? normalOrders.filter((order) => order.customer_id === selectedCustomerId)
+    : normalOrders;
 
   const groupOrdersByCustomer = (source: Order[]) => {
     const grouped = new Map<string, { customer_id: string; table_number: number | null; orders: Order[] }>();
@@ -1352,7 +1355,7 @@ export default function AdminPage() {
     );
   };
 
-  const orderBadgeCount = orders.filter((order) => order.status !== "served" || order.checkout_status === "requested").length;
+  const orderBadgeCount = orders.filter((order) => order.checkout_status !== "requested" && order.status !== "served").length;
   const soldOutCount = products.filter((product) => !product.is_available).length;
 
   const tabs = [
@@ -1479,7 +1482,21 @@ export default function AdminPage() {
                         {customer.table_number !== null && activeCustomers.filter((entry) => entry.table_number === customer.table_number).length > 1 && <span className="mt-1 inline-flex rounded-sm bg-[#7A1C36]/30 px-2 py-0.5 text-[10px] font-semibold text-[#F0A2B3]">卓番重複</span>}
                         <span className="mt-1 block text-xs text-[#A18F96]">{selected ? "詳細を閉じる −" : "詳細を見る ＋"}</span>
                       </button>
-
+                      {customer.checkout_completed_at ? (
+                        <span className="shrink-0 rounded-md border border-[#D7B77C]/50 bg-[#4A182A] px-3 py-3 text-xs font-semibold text-[#D7B77C]">会計済み</span>
+                      ) : customer.orders.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => hasCheckoutRequest
+                            ? completeCustomerCheckout(customer.customer_id, tableLabel(customer.table_number))
+                            : startCustomerCheckout(customer.customer_id, tableLabel(customer.table_number))}
+                          className="shrink-0 rounded-md bg-[#A51D43] px-3 py-3 text-sm font-semibold text-[#FFF9F5]"
+                        >
+                          {hasCheckoutRequest ? "会計を完了" : "会計"}
+                        </button>
+                      ) : (
+                        <span className="shrink-0 px-2 text-xs text-[#8F8288]">注文待ち</span>
+                      )}
                     </div>
                     {selected && (
                       <div className="border-t border-[#6A243D] p-4">
@@ -1501,18 +1518,14 @@ export default function AdminPage() {
                             {Array.from({ length: 20 }, (_, index) => index + 1).map((number) => <option key={number} value={number}>{String(number).padStart(2, "0")}</option>)}
                           </select>
                         </div>
-                        <p className="mt-3 text-sm text-[#C5B7BA]">会計状態：{hasCheckoutRequest ? "お会計依頼中" : "未会計"}</p>
-                        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                          {hasCheckoutRequest ? (
-                            <button type="button" onClick={() => cancelCustomerCheckout(customer.customer_id, tableLabel(customer.table_number))} className="flex-1 rounded-md border border-[#C83D4D]/60 bg-[#4A182A] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計依頼を取り消す</button>
-                          ) : customer.orders.length > 0 ? (
-                            <button type="button" onClick={() => startCustomerCheckout(customer.customer_id, tableLabel(customer.table_number))} className="flex-1 rounded-md bg-[#A51D43] px-3 py-3 text-sm font-semibold text-[#FFF9F5]">この卓のお会計をする</button>
-                          ) : (
-                            <span className="text-xs text-[#8F8288]">注文待ち</span>
-                          )}
-                        </div>
+                        <p className="mt-3 text-sm text-[#C5B7BA]">会計状態：{customer.checkout_completed_at ? "会計済み" : hasCheckoutRequest ? "お会計依頼中" : "未会計"}</p>
+                        {hasCheckoutRequest && (
+                          <div className="mt-4">
+                            <button type="button" onClick={() => cancelCustomerCheckout(customer.customer_id, tableLabel(customer.table_number))} className="w-full rounded-md border border-[#C83D4D]/60 bg-[#4A182A] px-3 py-3 text-sm font-semibold text-[#F08A91]">会計依頼を取り消す</button>
+                          </div>
+                        )}
                         <div className="mt-3 grid grid-cols-2 gap-2">
-                          <button type="button" onClick={() => { setProxyOrderCustomerId(customer.customer_id); setProxyCart([]); setProxySelectedProductId(""); setProxySelectedOption(""); }} className="rounded-md border border-[#C65A73]/60 bg-[#4A182A] px-3 py-3 text-sm font-semibold text-[#F2D8DF]">スタッフが代理注文する</button>
+                          <button type="button" disabled={Boolean(customer.checkout_completed_at)} onClick={() => { setProxyOrderCustomerId(customer.customer_id); setProxyCart([]); setProxySelectedProductId(""); setProxySelectedOption(""); }} className="rounded-md border border-[#C65A73]/60 bg-[#4A182A] px-3 py-3 text-sm font-semibold text-[#F2D8DF] disabled:cursor-not-allowed disabled:opacity-40">スタッフが代理注文する</button>
                           <button type="button" disabled={customer.orders.length > 0} onClick={() => resetCustomerTerminal(customer.customer_id, tableLabel(customer.table_number))} className="rounded-md border border-[#A51D43]/70 bg-[#35131F] px-3 py-3 text-sm font-semibold text-[#F2C8D1] disabled:cursor-not-allowed disabled:opacity-40">端末をリセット</button>
                         </div>
                         <div className="mt-4 space-y-3">
